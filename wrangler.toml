@@ -1,0 +1,21 @@
+name = "section9-artifacts"
+main = "src/index.ts"
+compatibility_date = "2026-08-08"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "section9"
+
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# Custom domain is intentionally not configured yet. When you are ready:
+#
+# routes = [
+#   { pattern = "artifacts.yearn.fi", custom_domain = true }
+# ]
+#
+# Add the domain to this Worker before creating any Cloudflare Access
+# application for it.

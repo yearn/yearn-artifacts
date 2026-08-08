@@ -1,0 +1,27 @@
+{
+  "name": "@section9/artifacts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that publishes and renders private security scan reports from R2.",
+  "scripts": {
+    "provision": "bash scripts/provision-r2.sh",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "markdown-it": "14.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260702.1",
+    "@types/markdown-it": "14.1.2",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.92.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

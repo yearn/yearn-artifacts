@@ -1,0 +1,190 @@
+import { isAuthorized, parseKeys } from "./auth";
+import { renderLandingPage } from "./lander";
+import { renderMarkdown } from "./render";
+
+export interface Env {
+  BUCKET: R2Bucket;
+  PUBLISH_KEYS?: string;
+}
+
+const CACHE_CONTROL = "public, max-age=86400";
+const MARKDOWN_TYPE = "text/markdown; charset=utf-8";
+
+export function contentTypeForName(name: string): string {
+  const lowerName = name.toLowerCase();
+  if (lowerName.endsWith(".html") || lowerName.endsWith(".htm")) return "text/html; charset=utf-8";
+  if (lowerName.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lowerName.endsWith(".sarif")) return "application/sarif+json";
+  if (lowerName.endsWith(".md")) return MARKDOWN_TYPE;
+  if (lowerName.endsWith(".txt")) return "text/plain; charset=utf-8";
+  if (lowerName.endsWith(".svg")) return "image/svg+xml";
+  if (lowerName.endsWith(".png")) return "image/png";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  return "application/octet-stream";
+}
+
+export function keyFromPathname(pathname: string): string {
+  return decodeURIComponent(pathname.replace(/^\/+/, ""));
+}
+
+// Stored keys are always <32 hex>.<ext>, so anything else cannot name a report.
+export function isValidKey(key: string): boolean {
+  return /^[0-9a-f]{32}\.[a-z0-9]{1,16}$/.test(key);
+}
+
+// The posted path is only read for its extension, which is what decides the
+// content type on the way back out.
+export function extensionOf(name: string): string {
+  const match = /\.([A-Za-z0-9]{1,16})$/.exec(name);
+  return match ? match[1].toLowerCase() : "bin";
+}
+
+function text(body: string, status: number): Response {
+  return new Response(body, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8", "x-robots-tag": "noindex" }
+  });
+}
+
+function html(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": CACHE_CONTROL,
+      "x-robots-tag": "noindex"
+    }
+  });
+}
+
+// Report bytes never change, but the template that renders them does. Cached
+// entries are scoped to this value so a rendering change takes effect on
+// existing reports instead of waiting out the day-long TTL. Bump it whenever
+// the rendered output changes.
+const RENDER_VERSION = "2";
+
+// The Cache API rejects non-GET keys, so HEAD and GET share one normalized
+// entry rather than HEAD throwing inside waitUntil.
+export function cacheKeyFor(url: string): Request {
+  const keyUrl = new URL(url);
+  keyUrl.searchParams.set("v", RENDER_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+async function handleGet(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  key: string
+): Promise<Response> {
+  const cacheKey = cacheKeyFor(request.url);
+  const cache = caches.default;
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const object = await env.BUCKET.get(key);
+  if (!object) return text("not found", 404);
+
+  const contentType = contentTypeForName(key);
+  const response = contentType === MARKDOWN_TYPE
+    ? html(renderMarkdown(await object.text(), key, object.customMetadata ?? {}))
+    : new Response(object.body, {
+      headers: {
+        "content-type": contentType,
+        "cache-control": CACHE_CONTROL,
+        "x-robots-tag": "noindex",
+        etag: object.httpEtag
+      }
+    });
+
+  ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
+
+// A report name derived from the request would be guessable, since everything
+// a publisher knows about a scan is public. The name is random instead, and the
+// URL a publish returns is the only handle on the report.
+export function randomName(extension: string): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${token}.${extension}`;
+}
+
+// Stored names are random, so listing the bucket says nothing about what a
+// report is. Provenance rides along as object metadata instead.
+const METADATA_FIELDS = ["repository", "scanner", "ref", "commit", "name"] as const;
+const METADATA_LIMIT = 512;
+
+export function metadataFromHeaders(
+  headers: Headers,
+  originalName: string
+): Record<string, string> {
+  const metadata: Record<string, string> = {};
+  for (const field of METADATA_FIELDS) {
+    const value = field === "name"
+      ? headers.get(`x-report-${field}`) ?? originalName
+      : headers.get(`x-report-${field}`);
+    if (value) metadata[field] = value.trim().slice(0, METADATA_LIMIT);
+  }
+  return metadata;
+}
+
+async function handlePublish(request: Request, env: Env, name: string): Promise<Response> {
+  if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
+    return text("unauthorized", 401);
+  }
+  if (!request.body) return text("empty body", 400);
+
+  const stored = randomName(extensionOf(name));
+  await env.BUCKET.put(stored, request.body, {
+    httpMetadata: { contentType: contentTypeForName(stored), cacheControl: CACHE_CONTROL },
+    customMetadata: metadataFromHeaders(request.headers, name)
+  });
+
+  const url = new URL(request.url);
+  return new Response(JSON.stringify({ key: stored, url: `${url.origin}/${stored}` }) + "\n", {
+    status: 201,
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
+// Deleting the object alone would leave the edge serving the report for up to a
+// day, so an unpublish has to drop the cached copy too.
+async function handleDelete(request: Request, env: Env, key: string): Promise<Response> {
+  if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
+    return text("unauthorized", 401);
+  }
+
+  await env.BUCKET.delete(key);
+  await caches.default.delete(cacheKeyFor(request.url));
+  return new Response(JSON.stringify({ key, deleted: true }) + "\n", {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    const key = keyFromPathname(url.pathname);
+
+    // The runtime strips the body from a HEAD response, so HEAD can share the
+    // GET path and still report accurate status and headers.
+    const isRead = request.method === "GET" || request.method === "HEAD";
+
+    if (key === "") {
+      return isRead ? html(renderLandingPage(url.origin)) : text("method not allowed", 405);
+    }
+
+    // A read names a stored report, so it must look like one. A publish only
+    // supplies a file name for its extension, so it is not held to that shape.
+    if (isRead) {
+      return isValidKey(key) ? handleGet(request, env, ctx, key) : text("invalid key", 400);
+    }
+    if (request.method === "DELETE") {
+      return isValidKey(key) ? handleDelete(request, env, key) : text("invalid key", 400);
+    }
+    if (request.method === "POST") return handlePublish(request, env, key);
+    return text("method not allowed", 405);
+  }
+} satisfies ExportedHandler<Env>;
