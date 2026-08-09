@@ -3,16 +3,20 @@
 Cloudflare Worker that publishes and renders private security scan reports
 stored in the `section9` R2 bucket.
 
-Markdown is rendered as HTML. Everything else is served as stored bytes.
+Markdown is rendered as HTML and published with a 1200×630 social preview
+image. Everything else is served as stored bytes.
 
 ## Architecture
 
 - R2 bucket: `section9`, private, reached through a Worker binding
+- Browser Run: renders a 1200×630 PNG for every Markdown report
 - Publisher authentication: bearer key from the `PUBLISH_KEYS` secret
 - Report access: unauthenticated, by URL
 
 The Worker is the only thing holding bucket access, so publishers never see S3
 credentials. Revoking a publisher means dropping its key from `PUBLISH_KEYS`.
+The generated PNG is exposed through the report's `og:image` and Twitter Card
+metadata.
 
 ## Names
 

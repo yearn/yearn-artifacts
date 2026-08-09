@@ -21,6 +21,20 @@ const cacheStore = new Map<string, Response>();
 
 type Stored = { body: string; options?: unknown };
 
+function browser(response = new Response(new Uint8Array([137, 80, 78, 71]), {
+  status: 200,
+  headers: { "content-type": "image/png" }
+})) {
+  const calls: Array<{ action: string; options: Record<string, unknown> }> = [];
+  return {
+    calls,
+    async quickAction(action: string, options: Record<string, unknown>) {
+      calls.push({ action, options });
+      return response.clone();
+    }
+  };
+}
+
 function bucket(
   objects: Record<string, string> = {},
   metadata: Record<string, Record<string, string>> = {}
@@ -108,7 +122,7 @@ describe("DELETE /<key>", () => {
       ctx
     );
     assert.equal(response.status, 200);
-    assert.deepEqual(target.BUCKET.deletes, [KEY]);
+    assert.deepEqual(target.BUCKET.deletes, [KEY, "0123456789abcdef0123456789abcdef.png"]);
 
     const after = await worker.fetch(new Request(`https://x.test/${KEY}`), target, ctx);
     assert.equal(after.status, 404);
@@ -237,6 +251,20 @@ describe("GET /<key>", () => {
     assert.match(await response.text(), /<h1>Findings<\/h1>/);
   });
 
+  it("links the stored thumbnail in social metadata", async () => {
+    cacheStore.clear();
+    const thumbnail = "0123456789abcdef0123456789abcdef.png";
+    const response = await worker.fetch(
+      new Request(`https://x.test/${KEY}`),
+      { BUCKET: bucket({ [KEY]: "# Findings\n" }, { [KEY]: { thumbnail } }) },
+      ctx
+    );
+    assert.match(
+      await response.text(),
+      /property="og:image" content="https:\/\/x\.test\/0123456789abcdef0123456789abcdef\.png"/
+    );
+  });
+
   it("serves non-markdown as stored bytes", async () => {
     const key = "0123456789abcdef0123456789abcdef.json";
     const response = await worker.fetch(
@@ -277,7 +305,11 @@ describe("GET /<key>", () => {
 });
 
 describe("POST /<key>", () => {
-  const env = () => ({ BUCKET: bucket(), PUBLISH_KEYS: "key-one,key-two" });
+  const env = () => ({
+    BUCKET: bucket(),
+    BROWSER: browser(),
+    PUBLISH_KEYS: "key-one,key-two"
+  });
 
   it("stores the body under a random name and returns its URL", async () => {
     const target = env();
@@ -298,7 +330,18 @@ describe("POST /<key>", () => {
     assert.match(body.key, /^[0-9a-f]{32}\.md$/);
     assert.equal(body.url, `https://x.test/${body.key}`);
     assert.equal(target.BUCKET.puts[body.key].body, "# Findings\n");
+    const thumbnail = `${body.key.slice(0, 32)}.png`;
+    assert.equal(thumbnail in target.BUCKET.puts, true);
     assert.equal(POST_NAME in target.BUCKET.puts, false);
+
+    assert.equal(target.BROWSER.calls.length, 1);
+    assert.equal(target.BROWSER.calls[0].action, "screenshot");
+    assert.deepEqual(target.BROWSER.calls[0].options.viewport, { width: 1200, height: 630 });
+    assert.deepEqual(target.BROWSER.calls[0].options.rejectRequestPattern, [".*"]);
+    assert.match(
+      target.BROWSER.calls[0].options.html as string,
+      new RegExp(`property="og:image" content="https://x\\.test/${thumbnail}"`)
+    );
   });
 
   it("stores provenance headers as object metadata", async () => {
@@ -321,7 +364,8 @@ describe("POST /<key>", () => {
     assert.deepEqual(options.customMetadata, {
       repository: "yearn/section9",
       commit: "a1b2c3d",
-      name: POST_NAME
+      name: POST_NAME,
+      thumbnail: `${key.slice(0, 32)}.png`
     });
   });
 
@@ -367,5 +411,39 @@ describe("POST /<key>", () => {
       ctx
     );
     assert.equal(response.status, 401);
+  });
+
+  it("does not publish when thumbnail generation fails", async () => {
+    const target = {
+      BUCKET: bucket(),
+      BROWSER: browser(new Response("unavailable", { status: 503 })),
+      PUBLISH_KEYS: "key-one"
+    };
+    const response = await worker.fetch(
+      new Request(`https://x.test/${POST_NAME}`, {
+        method: "POST",
+        headers: { authorization: "Bearer key-one" },
+        body: "# Findings\n"
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 502);
+    assert.deepEqual(target.BUCKET.puts, {});
+  });
+
+  it("does not invoke the browser for non-markdown files", async () => {
+    const target = env();
+    const response = await worker.fetch(
+      new Request("https://x.test/report.json", {
+        method: "POST",
+        headers: { authorization: "Bearer key-one" },
+        body: '{"ok":true}'
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 201);
+    assert.equal(target.BROWSER.calls.length, 0);
   });
 });

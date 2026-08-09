@@ -38,6 +38,10 @@ The stored R2 object key format is:
 <32 hex characters>.<ext>
 ```
 
+Markdown reports also have a `<same 32 hex characters>.png` thumbnail. Its key
+is stored in the report's custom metadata and it must be removed with the
+report.
+
 A stored key is never reused, so a published report never changes. That is what
 makes the 24 hour cache safe.
 

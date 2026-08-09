@@ -6,6 +6,10 @@ compatibility_date = "2026-08-08"
 binding = "BUCKET"
 bucket_name = "section9"
 
+[browser]
+binding = "BROWSER"
+remote = true
+
 [observability]
 [observability.logs]
 enabled = true

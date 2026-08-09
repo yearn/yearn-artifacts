@@ -4,6 +4,7 @@ import { renderMarkdown } from "./render";
 
 export interface Env {
   BUCKET: R2Bucket;
+  BROWSER: BrowserRun;
   PUBLISH_KEYS?: string;
 }
 
@@ -61,7 +62,7 @@ function html(body: string, status = 200): Response {
 // entries are scoped to this value so a rendering change takes effect on
 // existing reports instead of waiting out the day-long TTL. Bump it whenever
 // the rendered output changes.
-const RENDER_VERSION = "2";
+const RENDER_VERSION = "3";
 
 // The Cache API rejects non-GET keys, so HEAD and GET share one normalized
 // entry rather than HEAD throwing inside waitUntil.
@@ -86,8 +87,10 @@ async function handleGet(
   if (!object) return text("not found", 404);
 
   const contentType = contentTypeForName(key);
+  const thumbnail = object.customMetadata?.thumbnail;
+  const thumbnailUrl = thumbnail ? `${new URL(request.url).origin}/${thumbnail}` : "";
   const response = contentType === MARKDOWN_TYPE
-    ? html(renderMarkdown(await object.text(), key, object.customMetadata ?? {}))
+    ? html(renderMarkdown(await object.text(), key, object.customMetadata ?? {}, thumbnailUrl))
     : new Response(object.body, {
       headers: {
         "content-type": contentType,
@@ -108,6 +111,10 @@ export function randomName(extension: string): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${token}.${extension}`;
+}
+
+export function thumbnailName(reportKey: string): string {
+  return `${reportKey.slice(0, 32)}.png`;
 }
 
 // Stored names are random, so listing the bucket says nothing about what a
@@ -135,13 +142,42 @@ async function handlePublish(request: Request, env: Env, name: string): Promise<
   }
   if (!request.body) return text("empty body", 400);
 
-  const stored = randomName(extensionOf(name));
-  await env.BUCKET.put(stored, request.body, {
-    httpMetadata: { contentType: contentTypeForName(stored), cacheControl: CACHE_CONTROL },
-    customMetadata: metadataFromHeaders(request.headers, name)
-  });
-
+  const extension = extensionOf(name);
+  const stored = randomName(extension);
   const url = new URL(request.url);
+  const metadata = metadataFromHeaders(request.headers, name);
+
+  if (extension === "md") {
+    const source = await request.text();
+    const thumbnail = thumbnailName(stored);
+    const thumbnailUrl = `${url.origin}/${thumbnail}`;
+    const rendered = renderMarkdown(source, stored, metadata, thumbnailUrl);
+    const screenshot = await env.BROWSER.quickAction("screenshot", {
+      html: rendered,
+      viewport: { width: 1200, height: 630 },
+      waitForTimeout: 500,
+      rejectRequestPattern: [".*"],
+      screenshotOptions: { type: "png", encoding: "binary", fullPage: false }
+    });
+    if (!screenshot.ok) return text("thumbnail generation failed", 502);
+
+    const image = await screenshot.arrayBuffer();
+    await Promise.all([
+      env.BUCKET.put(stored, source, {
+        httpMetadata: { contentType: MARKDOWN_TYPE, cacheControl: CACHE_CONTROL },
+        customMetadata: { ...metadata, thumbnail }
+      }),
+      env.BUCKET.put(thumbnail, image, {
+        httpMetadata: { contentType: "image/png", cacheControl: CACHE_CONTROL }
+      })
+    ]);
+  } else {
+    await env.BUCKET.put(stored, request.body, {
+      httpMetadata: { contentType: contentTypeForName(stored), cacheControl: CACHE_CONTROL },
+      customMetadata: metadata
+    });
+  }
+
   return new Response(JSON.stringify({ key: stored, url: `${url.origin}/${stored}` }) + "\n", {
     status: 201,
     headers: { "content-type": "application/json; charset=utf-8" }
@@ -155,8 +191,13 @@ async function handleDelete(request: Request, env: Env, key: string): Promise<Re
     return text("unauthorized", 401);
   }
 
-  await env.BUCKET.delete(key);
-  await caches.default.delete(cacheKeyFor(request.url));
+  const keys = key.endsWith(".md") ? [key, thumbnailName(key)] : [key];
+  await Promise.all(keys.map((stored) => env.BUCKET.delete(stored)));
+  await Promise.all(keys.map((stored) => {
+    const url = new URL(request.url);
+    url.pathname = `/${stored}`;
+    return caches.default.delete(cacheKeyFor(url.toString()));
+  }));
   return new Response(JSON.stringify({ key, deleted: true }) + "\n", {
     status: 200,
     headers: { "content-type": "application/json; charset=utf-8" }

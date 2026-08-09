@@ -66,7 +66,15 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export function layout(title: string, body: string, footer = ""): string {
+export function layout(title: string, body: string, footer = "", ogImage = ""): string {
+  const social = ogImage
+    ? `<meta property="og:image" content="${escapeHtml(ogImage)}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${escapeHtml(ogImage)}">`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -74,6 +82,7 @@ export function layout(title: string, body: string, footer = ""): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(title)}</title>
+${social}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap">
@@ -117,11 +126,13 @@ export function pageTitle(
 export function renderMarkdown(
   source: string,
   key: string,
-  metadata: Record<string, string> = {}
+  metadata: Record<string, string> = {},
+  ogImage = ""
 ): string {
   return layout(
     pageTitle(source, key, metadata),
     markdown.render(source),
-    provenanceLine(key, metadata)
+    provenanceLine(key, metadata),
+    ogImage
   );
 }

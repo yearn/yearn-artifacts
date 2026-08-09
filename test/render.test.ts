@@ -62,6 +62,14 @@ describe("page title", () => {
     const page = renderMarkdown("# Scan Results\n", "abc.md", { repository: "yearn/x" });
     assert.match(page, /<title>Scan Results · yearn\/x<\/title>/);
   });
+
+  it("includes social image metadata when a thumbnail exists", () => {
+    const page = renderMarkdown("# Scan Results\n", "abc.md", {}, "https://x.test/abc.png");
+    assert.match(page, /property="og:image" content="https:\/\/x\.test\/abc\.png"/);
+    assert.match(page, /property="og:image:width" content="1200"/);
+    assert.match(page, /property="og:image:height" content="630"/);
+    assert.match(page, /name="twitter:card" content="summary_large_image"/);
+  });
 });
 
 describe("landing page", () => {

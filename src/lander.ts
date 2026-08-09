@@ -18,7 +18,8 @@ export function renderLandingPage(baseUrl: string): string {
   const body = `
 <h1>Section9 Artifacts</h1>
 <p>Publishes and renders private security scan reports. Markdown is rendered as
-HTML; everything else is served as-is.</p>
+HTML with an automatically generated social preview; everything else is served
+as-is.</p>
 
 <h2>Endpoints</h2>
 <pre>GET    /&lt;name&gt;             read a report
