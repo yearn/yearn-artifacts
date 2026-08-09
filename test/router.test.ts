@@ -50,6 +50,7 @@ function bucket(
       return {
         httpEtag: `"${key}"`,
         body,
+        uploaded: new Date("2026-08-09T12:00:00Z"),
         customMetadata: metadata[key],
         async text() {
           return body;
@@ -81,6 +82,8 @@ let randomName: (extension: string) => string;
 let extensionOf: (name: string) => string;
 let metadataFromHeaders: (headers: Headers, originalName: string) => Record<string, string>;
 let cacheKeyFor: (url: string) => Request;
+let createdDate: (uploaded: Date) => string;
+let expirationDate: (uploaded: Date) => string;
 
 before(async () => {
   const module = await import("../src/index.ts");
@@ -92,6 +95,15 @@ before(async () => {
   extensionOf = module.extensionOf;
   metadataFromHeaders = module.metadataFromHeaders;
   cacheKeyFor = module.cacheKeyFor;
+  createdDate = module.createdDate;
+  expirationDate = module.expirationDate;
+});
+
+describe("report expiration", () => {
+  it("formats the upload date plus 30 days", () => {
+    assert.equal(createdDate(new Date("2026-08-09T12:00:00Z")), "2026-08-09");
+    assert.equal(expirationDate(new Date("2026-08-09T12:00:00Z")), "2026-09-08");
+  });
 });
 
 describe("cache key", () => {
@@ -240,6 +252,7 @@ describe("GET /<key>", () => {
   });
 
   it("renders stored markdown", async () => {
+    cacheStore.clear();
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`),
       { BUCKET: bucket({ [KEY]: "# Findings\n" }) },
@@ -248,7 +261,11 @@ describe("GET /<key>", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "public, max-age=86400");
     assert.equal(response.headers.get("x-robots-tag"), "noindex");
-    assert.match(await response.text(), /<h1>Findings<\/h1>/);
+    const page = await response.text();
+    assert.match(page, /<h1>Findings<\/h1>/);
+    assert.match(page, /Provenance: 0123456789abcdef0123456789abcdef\.md/);
+    assert.match(page, /Created: 2026-08-09/);
+    assert.match(page, /Expires: 2026-09-08/);
   });
 
   it("links the stored thumbnail in social metadata", async () => {

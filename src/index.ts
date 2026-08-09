@@ -10,6 +10,16 @@ export interface Env {
 
 const CACHE_CONTROL = "public, max-age=86400";
 const MARKDOWN_TYPE = "text/markdown; charset=utf-8";
+const RETENTION_DAYS = 30;
+
+export function createdDate(uploaded: Date): string {
+  return uploaded.toISOString().slice(0, 10);
+}
+
+export function expirationDate(uploaded: Date): string {
+  const expires = new Date(uploaded.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  return expires.toISOString().slice(0, 10);
+}
 
 export function contentTypeForName(name: string): string {
   const lowerName = name.toLowerCase();
@@ -62,7 +72,7 @@ function html(body: string, status = 200): Response {
 // entries are scoped to this value so a rendering change takes effect on
 // existing reports instead of waiting out the day-long TTL. Bump it whenever
 // the rendered output changes.
-const RENDER_VERSION = "3";
+const RENDER_VERSION = "5";
 
 // The Cache API rejects non-GET keys, so HEAD and GET share one normalized
 // entry rather than HEAD throwing inside waitUntil.
@@ -90,7 +100,14 @@ async function handleGet(
   const thumbnail = object.customMetadata?.thumbnail;
   const thumbnailUrl = thumbnail ? `${new URL(request.url).origin}/${thumbnail}` : "";
   const response = contentType === MARKDOWN_TYPE
-    ? html(renderMarkdown(await object.text(), key, object.customMetadata ?? {}, thumbnailUrl))
+    ? html(renderMarkdown(
+      await object.text(),
+      key,
+      object.customMetadata ?? {},
+      thumbnailUrl,
+      createdDate(object.uploaded),
+      expirationDate(object.uploaded)
+    ))
     : new Response(object.body, {
       headers: {
         "content-type": contentType,
@@ -151,7 +168,15 @@ async function handlePublish(request: Request, env: Env, name: string): Promise<
     const source = await request.text();
     const thumbnail = thumbnailName(stored);
     const thumbnailUrl = `${url.origin}/${thumbnail}`;
-    const rendered = renderMarkdown(source, stored, metadata, thumbnailUrl);
+    const created = new Date();
+    const rendered = renderMarkdown(
+      source,
+      stored,
+      metadata,
+      thumbnailUrl,
+      createdDate(created),
+      expirationDate(created)
+    );
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       html: rendered,
       viewport: { width: 1200, height: 630 },

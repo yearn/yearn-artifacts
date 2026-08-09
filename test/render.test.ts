@@ -28,6 +28,13 @@ describe("markdown rendering", () => {
     assert.match(page, /reports\/x\/REPORT\.md/);
   });
 
+  it("shows expiration in the footer", () => {
+    const page = renderMarkdown("hi\n", "abc.md", {}, "", "2026-08-09", "2026-09-08");
+    assert.match(page, /<div>Provenance: abc\.md<\/div>/);
+    assert.match(page, /<div>Created: 2026-08-09<\/div>/);
+    assert.match(page, /<div>Expires: 2026-09-08<\/div>/);
+  });
+
   it("escapes a key that contains markup", () => {
     const page = renderMarkdown("hi\n", "reports/<script>/REPORT.md");
     assert.doesNotMatch(page, /<script>\/REPORT/);

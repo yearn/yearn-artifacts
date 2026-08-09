@@ -106,6 +106,17 @@ export function provenanceLine(key: string, metadata: Record<string, string> = {
   return parts.length ? parts.join(" &middot; ") : escapeHtml(key);
 }
 
+export function reportFooter(
+  key: string,
+  metadata: Record<string, string> = {},
+  created = "",
+  expires = ""
+): string {
+  return `<div>Provenance: ${provenanceLine(key, metadata)}</div>
+<div>Created: ${escapeHtml(created)}</div>
+<div>Expires: ${escapeHtml(expires)}</div>`;
+}
+
 // A report's own first heading names it better than the posted file name does.
 export function headingOf(source: string): string {
   const match = /^[ \t]{0,3}#{1,2}[ \t]+(.+?)[ \t]*#*[ \t]*$/m.exec(source);
@@ -127,12 +138,14 @@ export function renderMarkdown(
   source: string,
   key: string,
   metadata: Record<string, string> = {},
-  ogImage = ""
+  ogImage = "",
+  created = "",
+  expires = ""
 ): string {
   return layout(
     pageTitle(source, key, metadata),
     markdown.render(source),
-    provenanceLine(key, metadata),
+    reportFooter(key, metadata, created, expires),
     ogImage
   );
 }
