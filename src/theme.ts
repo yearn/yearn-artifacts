@@ -140,6 +140,8 @@ code, pre {
 }
 .page { max-width: 48rem; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 .page-header { margin-bottom: 2.5rem; }
+/* Everything in the footer stacks right-justified: the nav row on top, any page-specific content
+   (e.g. the report page's provenance/created/expires) below it. */
 .page-footer {
   margin-top: 3rem;
   padding-top: 1.5rem;
@@ -147,8 +149,8 @@ code, pre {
   color: var(--fg-faint);
   font-size: 0.875rem;
   display: flex;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 1rem;
 }
 .theme-toggle {
@@ -169,9 +171,7 @@ code, pre {
 .theme-icon { width: 0.875rem; height: 0.875rem; }
 @keyframes rise-in { from { transform: translateY(1.1em); } to { transform: translateY(0); } }
 .rise-in { animation: rise-in 180ms cubic-bezier(0.22, 1, 0.36, 1); }
-// margin-left: auto pushes this to the right edge of .page-footer whether it's the only child
-// (landing page) or sits alongside .footer-info (report page) — no per-page override needed.
-.footer-nav { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-left: auto; }
+.footer-nav { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .footer-nav a { color: var(--fg-muted); }
 .footer-nav a:hover { color: var(--fg); text-decoration: none; }
 .footer-nav .sep { color: var(--border); }
