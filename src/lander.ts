@@ -57,9 +57,8 @@ export function renderLandingPage(baseUrl: string): string {
 
   const header = `<div class="hero">
 <h1>${YEARN_SYMBOL}Yearn Artifacts</h1>
-<p>Publishes and renders private security scan reports. Markdown becomes a
-styled page with an automatically generated social preview; everything else
-is served as-is.</p>
+<p>Publishes private reports as URLs. Markdown becomes a styled page with an
+automatically generated social preview; everything else is served as-is.</p>
 </div>`;
 
   const body = `
