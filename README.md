@@ -53,7 +53,7 @@ Bump `RENDER_VERSION` in `src/index.ts` when the rendered output changes.
 Reports expire 30 days after publish, via an R2 lifecycle rule on the bucket:
 
 ```bash
-pnpm --dir packages/artifacts exec wrangler r2 bucket lifecycle add section9 \
+pnpm exec wrangler r2 bucket lifecycle add section9 \
   expire-reports "" --expire-days 30
 ```
 
@@ -63,7 +63,7 @@ in a deliberate archive, not in this bucket.
 
 ## Setup
 
-Install dependencies from the repo root:
+Install dependencies:
 
 ```bash
 corepack enable
@@ -73,19 +73,19 @@ pnpm install
 Create the private R2 bucket:
 
 ```bash
-pnpm artifacts:provision
+pnpm provision
 ```
 
 Set one or more publish keys, comma-separated:
 
 ```bash
-pnpm --dir packages/artifacts exec wrangler secret put PUBLISH_KEYS
+pnpm exec wrangler secret put PUBLISH_KEYS
 ```
 
 Deploy:
 
 ```bash
-pnpm artifacts:deploy
+pnpm deploy
 ```
 
 ## Publish a Report
