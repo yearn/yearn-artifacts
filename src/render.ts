@@ -27,8 +27,7 @@ th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: l
 th { background: var(--surface); font-weight: 700; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
-.page-footer div + div { margin-top: 0.25rem; }
-.page-footer .footer-nav { margin-top: 1rem; }
+.footer-info div + div { margin-top: 0.25rem; }
 `;
 
 export function escapeHtml(value: string): string {
@@ -149,9 +148,8 @@ export function renderMarkdown(
 ): string {
   // No Yearn logo here (see AGENTS.md): report content is untrusted, and this page is rendered
   // for third parties who followed a report link, not for Yearn-branded navigation.
-  const footer = opts.screenshot
-    ? reportFooter(key, metadata, created, expires)
-    : `${reportFooter(key, metadata, created, expires)}${footerNav(FOOTER_LINKS)}`;
+  const footerInfo = `<div class="footer-info">${reportFooter(key, metadata, created, expires)}</div>`;
+  const footer = opts.screenshot ? footerInfo : `${footerInfo}${footerNav(FOOTER_LINKS)}`;
   return layout(
     pageTitle(source, key, metadata),
     markdown.render(source),

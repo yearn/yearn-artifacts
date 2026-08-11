@@ -146,6 +146,10 @@ code, pre {
   border-top: 1px solid var(--border);
   color: var(--fg-faint);
   font-size: 0.875rem;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 .theme-toggle {
   display: inline-flex;
@@ -165,7 +169,9 @@ code, pre {
 .theme-icon { width: 0.875rem; height: 0.875rem; }
 @keyframes rise-in { from { transform: translateY(1.1em); } to { transform: translateY(0); } }
 .rise-in { animation: rise-in 180ms cubic-bezier(0.22, 1, 0.36, 1); }
-.footer-nav { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+// margin-left: auto pushes this to the right edge of .page-footer whether it's the only child
+// (landing page) or sits alongside .footer-info (report page) — no per-page override needed.
+.footer-nav { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-left: auto; }
 .footer-nav a { color: var(--fg-muted); }
 .footer-nav a:hover { color: var(--fg); text-decoration: none; }
 .footer-nav .sep { color: var(--border); }
