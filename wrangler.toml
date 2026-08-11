@@ -12,7 +12,7 @@ routes = [
 
 [[r2_buckets]]
 binding = "BUCKET"
-bucket_name = "section9"
+bucket_name = "artifacts"
 
 [browser]
 binding = "BROWSER"

@@ -1,14 +1,14 @@
 # Section 9 Artifacts
 
 Cloudflare Worker that publishes and renders private security scan reports
-stored in the `section9` R2 bucket.
+stored in the `artifacts` R2 bucket.
 
 Markdown is rendered as HTML and published with a 1200×630 social preview
 image. Everything else is served as stored bytes.
 
 ## Architecture
 
-- R2 bucket: `section9`, private, reached through a Worker binding
+- R2 bucket: `artifacts`, private, reached through a Worker binding
 - Browser Run: renders a 1200×630 PNG for every Markdown report
 - Publisher authentication: bearer key from the `PUBLISH_KEYS` secret
 - Report access: unauthenticated, by URL
@@ -56,7 +56,7 @@ Bump `RENDER_VERSION` in `src/index.ts` when the rendered output changes.
 Reports expire 30 days after publish, via an R2 lifecycle rule on the bucket:
 
 ```bash
-pnpm exec wrangler r2 bucket lifecycle add section9 \
+pnpm exec wrangler r2 bucket lifecycle add artifacts \
   expire-reports "" --expire-days 30
 ```
 

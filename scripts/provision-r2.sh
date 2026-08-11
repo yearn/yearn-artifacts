@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bucket_name="${R2_BUCKET_NAME:-section9}"
+bucket_name="${R2_BUCKET_NAME:-artifacts}"
 
 create_bucket() {
   local name="$1"
