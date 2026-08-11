@@ -1,6 +1,14 @@
 name = "yearn-artifacts"
 main = "src/index.ts"
 compatibility_date = "2026-08-08"
+workers_dev = true
+
+routes = [
+  { pattern = "artifacts.yearn.dev", custom_domain = true }
+]
+
+# Reads are unauthenticated (see AGENTS.md). If that changes, put a
+# Cloudflare Access application in front of this hostname.
 
 [[r2_buckets]]
 binding = "BUCKET"
@@ -14,12 +22,3 @@ remote = true
 [observability.logs]
 enabled = true
 invocation_logs = true
-
-# Custom domain is intentionally not configured yet. When you are ready:
-#
-# routes = [
-#   { pattern = "artifacts.yearn.fi", custom_domain = true }
-# ]
-#
-# Add the domain to this Worker before creating any Cloudflare Access
-# application for it.

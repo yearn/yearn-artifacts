@@ -12,6 +12,9 @@ image. Everything else is served as stored bytes.
 - Browser Run: renders a 1200×630 PNG for every Markdown report
 - Publisher authentication: bearer key from the `PUBLISH_KEYS` secret
 - Report access: unauthenticated, by URL
+- Hostnames: `https://artifacts.yearn.dev` (custom domain) and
+  `https://yearn-artifacts.<account>.workers.dev` (kept enabled alongside it,
+  since existing report URLs on that domain must keep working)
 
 The Worker is the only thing holding bucket access, so publishers never see S3
 credentials. Revoking a publisher means dropping its key from `PUBLISH_KEYS`.
@@ -141,6 +144,5 @@ Writes require a bearer key. **Reads are not authenticated** — anyone with a
 report URL can read it. There is no index, and report names are
 random, so a report is only reachable by the URL the publish returned. Treat report URLs as secrets.
 
-To gate reads later, put a Cloudflare Access application in front of the
-Worker's hostname. Add the custom domain to the Worker before creating the
-Access application.
+To gate reads later, put a Cloudflare Access application in front of
+`artifacts.yearn.dev`.
