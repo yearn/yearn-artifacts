@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import { BASE_STYLE, FONT_LINKS, footerNav, themeBootScript, themeToggleScript } from "./theme";
 
 // html: false escapes raw HTML in the source. Reports quote dependency names,
 // finding titles, and code from repositories we do not control, so the
@@ -9,53 +10,25 @@ const markdown = new MarkdownIt({
   breaks: false
 });
 
-const STYLE = `
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: #09090b;
-    color: #e4e4e7;
-    font: 16px/1.7 Inter, ui-sans-serif, system-ui, sans-serif;
-  }
-  main { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem; }
-  h1, h2, h3, h4 { line-height: 1.3; margin: 2rem 0 1rem; font-weight: 600; }
-  h1 { font-size: 1.875rem; margin-top: 0; }
-  h2 { font-size: 1.375rem; }
-  h3 { font-size: 1.125rem; }
-  p, ul, ol, blockquote, table { margin: 0 0 1rem; }
-  a { color: #93c5fd; text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  code, pre {
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-    font-size: 0.875rem;
-  }
-  code { background: #18181b; border-radius: 0.25rem; padding: 0.125rem 0.375rem; }
-  pre {
-    background: #18181b;
-    border-radius: 0.5rem;
-    padding: 1rem;
-    overflow-x: auto;
-  }
-  pre code { background: none; padding: 0; }
-  blockquote {
-    border-left: 2px solid #3f3f46;
-    margin-left: 0;
-    padding-left: 1rem;
-    color: #a1a1aa;
-  }
-  table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
-  th, td { border: 1px solid #27272a; padding: 0.5rem 0.75rem; text-align: left; }
-  th { background: #18181b; font-weight: 600; }
-  hr { border: 0; border-top: 1px solid #27272a; margin: 2rem 0; }
-  img { max-width: 100%; height: auto; }
-  footer {
-    margin-top: 3rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid #27272a;
-    color: #71717a;
-    font-size: 0.875rem;
-  }
+const REPORT_STYLE = `
+main { line-height: 1.7; font-size: 1rem; }
+h1, h2, h3, h4 { line-height: 1.3; margin: 2rem 0 1rem; font-weight: 700; }
+h1 { font-size: 1.875rem; margin-top: 0; }
+h2 { font-size: 1.375rem; }
+h3 { font-size: 1.125rem; }
+p, ul, ol, blockquote, table { margin: 0 0 1rem; }
+code, pre { font-size: 0.875rem; }
+code { background: var(--surface); border-radius: 0.25rem; padding: 0.125rem 0.375rem; }
+pre { background: var(--surface); border-radius: 0.5rem; padding: 1rem; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+blockquote { border-left: 2px solid var(--border); margin-left: 0; padding-left: 1rem; color: var(--fg-muted); }
+table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+th { background: var(--surface); font-weight: 700; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+.page-footer div + div { margin-top: 0.25rem; }
+.page-footer .footer-nav { margin-top: 1rem; }
 `;
 
 export function escapeHtml(value: string): string {
@@ -66,7 +39,24 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export function layout(title: string, body: string, footer = "", ogImage = ""): string {
+export type LayoutOptions = {
+  header?: string;
+  // Extra CSS appended after the shared base/report styles, for callers that need page-specific
+  // rules (e.g. the landing page's step list).
+  extraStyle?: string;
+  // Set only for the OG-thumbnail screenshot pass: the theme is hardcoded (no boot script needed,
+  // and headless rendering has no real localStorage/media-query state worth reading), and the
+  // theme-toggle control is left out of the capture.
+  screenshot?: boolean;
+};
+
+export function layout(
+  title: string,
+  body: string,
+  footer = "",
+  ogImage = "",
+  opts: LayoutOptions = {}
+): string {
   const social = ogImage
     ? `<meta property="og:image" content="${escapeHtml(ogImage)}">
 <meta property="og:image:type" content="image/png">
@@ -75,24 +65,33 @@ export function layout(title: string, body: string, footer = "", ogImage = ""): 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${escapeHtml(ogImage)}">`
     : "";
+  const htmlClass = opts.screenshot ? ' class="dark"' : "";
+  // The boot script runs in <head>, before first paint, so the page never flashes the wrong
+  // theme. The toggle script runs at the end of <body>, since it needs the footer button to
+  // exist first. Screenshots skip both: the theme is hardcoded via htmlClass instead.
+  const bootScript = opts.screenshot ? "" : themeBootScript();
+  const toggleScript = opts.screenshot ? "" : themeToggleScript();
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${htmlClass}>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(title)}</title>
 ${social}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap">
-<style>${STYLE}</style>
+${FONT_LINKS}
+<style>${BASE_STYLE}${opts.extraStyle ?? ""}</style>
+${bootScript}
 </head>
 <body>
+<div class="page">
+${opts.header ? `<header class="page-header">${opts.header}</header>` : ""}
 <main>
 ${body}
-${footer ? `<footer>${footer}</footer>` : ""}
 </main>
+${footer ? `<footer class="page-footer">${footer}</footer>` : ""}
+</div>
+${toggleScript}
 </body>
 </html>`;
 }
@@ -134,18 +133,30 @@ export function pageTitle(
   return heading || scope || metadata.name || key;
 }
 
+const FOOTER_LINKS = [
+  { href: "https://github.com/yearn/yearn-artifacts", label: "github" },
+  { href: "https://yearn.fi", label: "yearn.fi" }
+];
+
 export function renderMarkdown(
   source: string,
   key: string,
   metadata: Record<string, string> = {},
   ogImage = "",
   created = "",
-  expires = ""
+  expires = "",
+  opts: { screenshot?: boolean } = {}
 ): string {
+  // No Yearn logo here (see AGENTS.md): report content is untrusted, and this page is rendered
+  // for third parties who followed a report link, not for Yearn-branded navigation.
+  const footer = opts.screenshot
+    ? reportFooter(key, metadata, created, expires)
+    : `${reportFooter(key, metadata, created, expires)}${footerNav(FOOTER_LINKS)}`;
   return layout(
     pageTitle(source, key, metadata),
     markdown.render(source),
-    reportFooter(key, metadata, created, expires),
-    ogImage
+    footer,
+    ogImage,
+    { ...opts, extraStyle: REPORT_STYLE }
   );
 }

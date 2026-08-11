@@ -53,3 +53,18 @@ rendering until the cache expires.
 
 Verify cache behaviour on the real URL. A query string makes a different cache
 key, so a cache-busted request proves nothing about what a reader sees.
+
+The landing page (`src/lander.ts`) and report page (`src/render.ts`) share a
+visual language with yearn-uptime-kuma-status (Aeonik + JetBrains Mono, the
+same oklch light/dark palette, a device/light/dark toggle), reimplemented as
+self-contained CSS in `src/theme.ts` instead of that repo's Tailwind CDN
+script. The report page is also rendered headless to produce each report's OG
+thumbnail (`BROWSER.quickAction` with `rejectRequestPattern: [".*"]`, which
+blocks every network request during the capture) — a runtime CSS framework
+would never generate any styles for that pass, which is why this stays
+hand-written CSS. Only `renderMarkdown`'s `{ screenshot: true }` path skips
+the boot/toggle scripts and hardcodes the theme, for a deterministic capture.
+
+The report page carries no Yearn logo: its content comes from repositories we
+do not control and is viewed by third parties who followed a report link, not
+by Yearn-branded navigation. The landing page does show it.

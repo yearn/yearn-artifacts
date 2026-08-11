@@ -72,7 +72,7 @@ function html(body: string, status = 200): Response {
 // entries are scoped to this value so a rendering change takes effect on
 // existing reports instead of waiting out the day-long TTL. Bump it whenever
 // the rendered output changes.
-const RENDER_VERSION = "5";
+const RENDER_VERSION = "6";
 
 // The Cache API rejects non-GET keys, so HEAD and GET share one normalized
 // entry rather than HEAD throwing inside waitUntil.
@@ -175,7 +175,8 @@ async function handlePublish(request: Request, env: Env, name: string): Promise<
       metadata,
       thumbnailUrl,
       createdDate(created),
-      expirationDate(created)
+      expirationDate(created),
+      { screenshot: true }
     );
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       html: rendered,

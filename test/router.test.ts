@@ -220,7 +220,7 @@ describe("GET /", () => {
   it("serves the landing page", async () => {
     const response = await worker.fetch(new Request("https://x.test/"), { BUCKET: bucket() }, ctx);
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Section9 Artifacts/);
+    assert.match(await response.text(), /Yearn Artifacts/);
   });
 
   it("rejects non-GET at the root", async () => {
