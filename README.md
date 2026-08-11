@@ -1,4 +1,4 @@
-# Section 9 Artifacts
+# Artifacts
 
 Cloudflare Worker that publishes and renders private security scan reports
 stored in the `artifacts` R2 bucket.
@@ -29,11 +29,6 @@ type the report is served with. The report is stored under a random name:
 ```text
 <32 hex characters>.<ext>
 ```
-
-Anything a publisher could derive a name from is public, so a derived name
-would be a guessable URL. The publish response carries the real URL and is the
-only handle on the report. Two publishes produce two reports, so a report can
-never be silently overwritten.
 
 ## Endpoints
 
@@ -95,7 +90,7 @@ pnpm deploy
 
 ```bash
 curl -X POST "$ARTIFACTS_URL/REPORT.md" \
-  -H "Authorization: Bearer $SECTION9_PUBLISH_KEY" \
+  -H "Authorization: Bearer $PUBLISH_KEY" \
   -H "Content-Type: text/markdown" \
   -H "X-Report-Repository: owner/repo" \
   -H "X-Report-Scanner: socket" \
@@ -119,7 +114,7 @@ Open that URL to read the rendered report.
 
 ```bash
 curl -X DELETE "$ARTIFACTS_URL/9f2c41d7ab3e5806d1f4c92b7e0a5643.md" \
-  -H "Authorization: Bearer $SECTION9_PUBLISH_KEY"
+  -H "Authorization: Bearer $PUBLISH_KEY"
 ```
 
 This removes the object and its cached copy. Deleting straight from R2 would
