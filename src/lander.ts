@@ -11,9 +11,9 @@ h2 { font-size: 1.25rem; font-weight: 700; margin: 2.5rem 0 1rem; }
 p { margin: 0 0 1rem; line-height: 1.6; }
 .steps { margin: 0 0 1rem; padding-left: 1.25rem; line-height: 1.7; }
 .steps strong { font-weight: 700; }
-pre { font-size: 0.8125rem; line-height: 1.6; background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; overflow-x: auto; margin: 0 0 1rem; }
-code { font-size: 0.8125rem; background: var(--surface); border: 1px solid var(--border); border-radius: 0.25rem; padding: 0.125rem 0.375rem; }
-pre code { background: none; border: 0; padding: 0; }
+pre { font-size: 0.8125rem; line-height: 1.6; background: var(--surface); border-radius: 0.5rem; padding: 1rem; overflow-x: auto; margin: 0 0 1rem; }
+code { font-size: 0.8125rem; background: var(--surface); border-radius: 0.25rem; padding: 0.125rem 0.375rem; }
+pre code { background: none; padding: 0; }
 .code-wrap { position: relative; }
 .copy-btn {
   position: absolute;
