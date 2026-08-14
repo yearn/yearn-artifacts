@@ -10,15 +10,46 @@ export interface Env {
 
 const CACHE_CONTROL = "public, max-age=86400";
 const MARKDOWN_TYPE = "text/markdown; charset=utf-8";
-const RETENTION_DAYS = 30;
+
+export const RETENTION_TIERS = {
+  "1d": 1,
+  "7d": 7,
+  "30d": 30,
+  "90d": 90,
+  "1y": 365,
+  archive: null
+} as const;
+
+export type RetentionTier = keyof typeof RETENTION_TIERS;
+export const DEFAULT_TIER: RetentionTier = "30d";
 
 export function createdDate(uploaded: Date): string {
   return uploaded.toISOString().slice(0, 10);
 }
 
-export function expirationDate(uploaded: Date): string {
-  const expires = new Date(uploaded.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1000);
+export function expirationDate(uploaded: Date, tier: RetentionTier = DEFAULT_TIER): string {
+  const days = RETENTION_TIERS[tier];
+  if (days === null) return "Never";
+  const expires = new Date(uploaded.getTime() + days * 24 * 60 * 60 * 1000);
   return expires.toISOString().slice(0, 10);
+}
+
+export type ReportRoute = { tier: RetentionTier; key: string };
+
+export function reportRoute(pathname: string): ReportRoute | null {
+  const path = keyFromPathname(pathname);
+  const parts = path.split("/");
+  if (parts.length === 1 && parts[0]) return { tier: DEFAULT_TIER, key: parts[0] };
+  if (parts.length !== 2 || !parts[1] || !(parts[0] in RETENTION_TIERS)) return null;
+  return { tier: parts[0] as RetentionTier, key: parts[1] };
+}
+
+export function storedKey(tier: RetentionTier, key: string): string {
+  return `${tier}/${key}`;
+}
+
+export function publicPath(tier: RetentionTier, key: string): string {
+  return tier === DEFAULT_TIER ? `/${key}` : `/${tier}/${key}`;
 }
 
 export function contentTypeForName(name: string): string {
@@ -72,7 +103,7 @@ function html(body: string, status = 200): Response {
 // entries are scoped to this value so a rendering change takes effect on
 // existing reports instead of waiting out the day-long TTL. Bump it whenever
 // the rendered output changes.
-const RENDER_VERSION = "10";
+const RENDER_VERSION = "11";
 
 // The Cache API rejects non-GET keys, so HEAD and GET share one normalized
 // entry rather than HEAD throwing inside waitUntil.
@@ -86,27 +117,33 @@ async function handleGet(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
-  key: string
+  route: ReportRoute
 ): Promise<Response> {
   const cacheKey = cacheKeyFor(request.url);
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const object = await env.BUCKET.get(key);
+  const internalKey = storedKey(route.tier, route.key);
+  // Temporary compatibility for reports published before retention prefixes
+  // were introduced. Remove after the one-time migration has been verified.
+  const object = await env.BUCKET.get(internalKey)
+    ?? (route.tier === DEFAULT_TIER ? await env.BUCKET.get(route.key) : null);
   if (!object) return text("not found", 404);
 
-  const contentType = contentTypeForName(key);
+  const contentType = contentTypeForName(route.key);
   const thumbnail = object.customMetadata?.thumbnail;
-  const thumbnailUrl = thumbnail ? `${new URL(request.url).origin}/${thumbnail}` : "";
+  const thumbnailUrl = thumbnail
+    ? `${new URL(request.url).origin}${publicPath(route.tier, thumbnail.split("/").at(-1)!)}`
+    : "";
   const response = contentType === MARKDOWN_TYPE
     ? html(renderMarkdown(
       await object.text(),
-      key,
+      route.key,
       object.customMetadata ?? {},
       thumbnailUrl,
       createdDate(object.uploaded),
-      expirationDate(object.uploaded)
+      expirationDate(object.uploaded, route.tier)
     ))
     : new Response(object.body, {
       headers: {
@@ -153,21 +190,23 @@ export function metadataFromHeaders(
   return metadata;
 }
 
-async function handlePublish(request: Request, env: Env, name: string): Promise<Response> {
+async function handlePublish(request: Request, env: Env, route: ReportRoute): Promise<Response> {
   if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
     return text("unauthorized", 401);
   }
   if (!request.body) return text("empty body", 400);
 
-  const extension = extensionOf(name);
+  const extension = extensionOf(route.key);
   const stored = randomName(extension);
+  const internal = storedKey(route.tier, stored);
   const url = new URL(request.url);
-  const metadata = metadataFromHeaders(request.headers, name);
+  const metadata = metadataFromHeaders(request.headers, route.key);
 
   if (extension === "md") {
     const source = await request.text();
     const thumbnail = thumbnailName(stored);
-    const thumbnailUrl = `${url.origin}/${thumbnail}`;
+    const internalThumbnail = storedKey(route.tier, thumbnail);
+    const thumbnailUrl = `${url.origin}${publicPath(route.tier, thumbnail)}`;
     const created = new Date();
     const rendered = renderMarkdown(
       source,
@@ -175,7 +214,7 @@ async function handlePublish(request: Request, env: Env, name: string): Promise<
       metadata,
       thumbnailUrl,
       createdDate(created),
-      expirationDate(created),
+      expirationDate(created, route.tier),
       { screenshot: true }
     );
     const screenshot = await env.BROWSER.quickAction("screenshot", {
@@ -189,22 +228,25 @@ async function handlePublish(request: Request, env: Env, name: string): Promise<
 
     const image = await screenshot.arrayBuffer();
     await Promise.all([
-      env.BUCKET.put(stored, source, {
+      env.BUCKET.put(internal, source, {
         httpMetadata: { contentType: MARKDOWN_TYPE, cacheControl: CACHE_CONTROL },
         customMetadata: { ...metadata, thumbnail }
       }),
-      env.BUCKET.put(thumbnail, image, {
+      env.BUCKET.put(internalThumbnail, image, {
         httpMetadata: { contentType: "image/png", cacheControl: CACHE_CONTROL }
       })
     ]);
   } else {
-    await env.BUCKET.put(stored, request.body, {
+    await env.BUCKET.put(internal, request.body, {
       httpMetadata: { contentType: contentTypeForName(stored), cacheControl: CACHE_CONTROL },
       customMetadata: metadata
     });
   }
 
-  return new Response(JSON.stringify({ key: stored, url: `${url.origin}/${stored}` }) + "\n", {
+  return new Response(JSON.stringify({
+    key: stored,
+    url: `${url.origin}${publicPath(route.tier, stored)}`
+  }) + "\n", {
     status: 201,
     headers: { "content-type": "application/json; charset=utf-8" }
   });
@@ -212,19 +254,21 @@ async function handlePublish(request: Request, env: Env, name: string): Promise<
 
 // Deleting the object alone would leave the edge serving the report for up to a
 // day, so an unpublish has to drop the cached copy too.
-async function handleDelete(request: Request, env: Env, key: string): Promise<Response> {
+async function handleDelete(request: Request, env: Env, route: ReportRoute): Promise<Response> {
   if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
     return text("unauthorized", 401);
   }
 
-  const keys = key.endsWith(".md") ? [key, thumbnailName(key)] : [key];
-  await Promise.all(keys.map((stored) => env.BUCKET.delete(stored)));
-  await Promise.all(keys.map((stored) => {
+  const keys = route.key.endsWith(".md") ? [route.key, thumbnailName(route.key)] : [route.key];
+  const internalKeys = keys.map((key) => storedKey(route.tier, key));
+  const legacyKeys = route.tier === DEFAULT_TIER ? keys : [];
+  await Promise.all([...internalKeys, ...legacyKeys].map((key) => env.BUCKET.delete(key)));
+  await Promise.all(keys.map((key) => {
     const url = new URL(request.url);
-    url.pathname = `/${stored}`;
+    url.pathname = publicPath(route.tier, key);
     return caches.default.delete(cacheKeyFor(url.toString()));
   }));
-  return new Response(JSON.stringify({ key, deleted: true }) + "\n", {
+  return new Response(JSON.stringify({ key: route.key, deleted: true }) + "\n", {
     status: 200,
     headers: { "content-type": "application/json; charset=utf-8" }
   });
@@ -234,6 +278,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const key = keyFromPathname(url.pathname);
+    const route = key === "" ? null : reportRoute(url.pathname);
 
     // The runtime strips the body from a HEAD response, so HEAD can share the
     // GET path and still report accurate status and headers.
@@ -246,12 +291,18 @@ export default {
     // A read names a stored report, so it must look like one. A publish only
     // supplies a file name for its extension, so it is not held to that shape.
     if (isRead) {
-      return isValidKey(key) ? handleGet(request, env, ctx, key) : text("invalid key", 400);
+      return route && isValidKey(route.key)
+        ? handleGet(request, env, ctx, route)
+        : text("invalid key", 400);
     }
     if (request.method === "DELETE") {
-      return isValidKey(key) ? handleDelete(request, env, key) : text("invalid key", 400);
+      return route && isValidKey(route.key)
+        ? handleDelete(request, env, route)
+        : text("invalid key", 400);
     }
-    if (request.method === "POST") return handlePublish(request, env, key);
+    if (request.method === "POST") {
+      return route ? handlePublish(request, env, route) : text("invalid path", 400);
+    }
     return text("method not allowed", 405);
   }
 } satisfies ExportedHandler<Env>;
