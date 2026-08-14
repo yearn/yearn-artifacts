@@ -1,6 +1,6 @@
 # Artifacts
 
-Cloudflare Worker that publishes and renders private security scan reports
+Cloudflare Worker that publishes and renders reports
 stored in the `artifacts` R2 bucket.
 
 Markdown is rendered as HTML and published with a 1200×630 social preview
@@ -11,7 +11,7 @@ image. Everything else is served as stored bytes.
 - R2 bucket: `artifacts`, private, reached through a Worker binding
 - Browser Run: renders a 1200×630 PNG for every Markdown report
 - Publisher authentication: bearer key from the `PUBLISH_KEYS` secret
-- Report access: unauthenticated, by URL
+- Report access: by URL
 - Hostnames: `https://artifacts.yearn.dev` (custom domain) and
   `https://yearn-artifacts.<account>.workers.dev` (kept enabled alongside it,
   since existing report URLs on that domain must keep working)
