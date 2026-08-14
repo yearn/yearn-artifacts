@@ -69,9 +69,6 @@ ${step("Store", "the report is saved under a random 32-character name")}
 ${step("Render", "Markdown is rendered to HTML and cached on read")}
 ${step("Expire", "reports are deleted automatically after 30 days")}
 </ul>
-<p>Reads are unauthenticated: anyone holding a report URL can open it. There is
-no index and no listing, so a report is only reachable by the exact URL a
-publish returned. Treat that URL as a secret.</p>
 
 <h2>Endpoints</h2>
 <pre class="endpoints">GET    /&lt;name&gt;             read a report
