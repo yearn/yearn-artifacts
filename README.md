@@ -68,6 +68,10 @@ deletion automatically. Lifecycle deletion is asynchronous and may take about
 24 hours after the displayed expiration date. Archive reports remain removable
 through the authenticated DELETE endpoint.
 
+The lifecycle configuration also aborts incomplete multipart uploads after
+seven days. The Worker never starts multipart uploads, so that rule is
+defensive hygiene for the bucket, not part of report retention.
+
 ## Setup
 
 Install dependencies:
