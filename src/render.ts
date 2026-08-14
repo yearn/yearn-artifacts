@@ -27,9 +27,25 @@ th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: l
 th { background: var(--surface); font-weight: 700; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
+.confidentiality-notice {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
 .footer-info { text-align: right; }
 .footer-info div + div { margin-top: 0.25rem; }
 `;
+
+const CONFIDENTIALITY_NOTICE = `<div class="confidentiality-notice" role="note">Yearn Confidential &mdash; Do Not Distribute</div>`;
 
 export function escapeHtml(value: string): string {
   return value
@@ -151,12 +167,14 @@ export function renderMarkdown(
   // No Yearn logo here (see AGENTS.md): report content is untrusted, and this page is rendered
   // for third parties who followed a report link, not for Yearn-branded navigation.
   const footerInfo = `<div class="footer-info">${reportFooter(key, metadata, created, expires)}</div>`;
-  const footer = opts.screenshot ? footerInfo : `${footerNav(FOOTER_LINKS)}${footerInfo}`;
+  const footer = opts.screenshot
+    ? `${CONFIDENTIALITY_NOTICE}${footerInfo}`
+    : `${CONFIDENTIALITY_NOTICE}${footerNav(FOOTER_LINKS)}${footerInfo}`;
   return layout(
     pageTitle(source, key, metadata),
     markdown.render(source),
     footer,
     ogImage,
-    { ...opts, extraStyle: REPORT_STYLE }
+    { ...opts, header: CONFIDENTIALITY_NOTICE, extraStyle: REPORT_STYLE }
   );
 }
