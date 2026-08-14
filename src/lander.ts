@@ -29,7 +29,7 @@ pre code { background: none; padding: 0; }
   cursor: pointer;
 }
 .copy-btn:hover { color: var(--fg); }
-.endpoints { font-size: 0.8125rem; }
+.endpoints, .tiers { font-size: 0.8125rem; }
 `;
 
 function codeBlock(id: string, content: string): string {
@@ -78,9 +78,21 @@ publish returned. Treat that URL as a secret.</p>
 POST   /&lt;anything&gt;.&lt;ext&gt;   publish a report (requires a key)
 DELETE /&lt;name&gt;             unpublish a report (requires a key)</pre>
 
+<h2>Retention</h2>
+<p>Reports expire after 30 days by default. Put a retention tier before the
+name to choose a different lifetime:</p>
+<pre class="tiers">/1d/&lt;name&gt;        1 day
+/7d/&lt;name&gt;        7 days
+/&lt;name&gt;           30 days (default)
+/90d/&lt;name&gt;       90 days
+/1y/&lt;name&gt;        1 year
+/archive/&lt;name&gt;   no automatic expiration</pre>
+<p>Archive reports remain removable through the authenticated DELETE endpoint.</p>
+
 <h2>Publish</h2>
-<p>Post to any name. Only the extension is read, and it decides how the report
-is served back.</p>
+<p>Post to any single-segment name, optionally preceded by one of the retention
+tiers above. Only the extension is read, and it decides how the report is served
+back; any other path shape is rejected with a 400.</p>
 ${codeBlock("publish", `curl -X POST ${baseUrl}/REPORT.md \\
   -H "Authorization: Bearer $ARTIFACTS_API_KEY" \\
   -H "Content-Type: text/markdown" \\
@@ -94,6 +106,9 @@ shown at the foot of the rendered report.</p>
 <p>The report is stored under a random name, returned in the response. That URL
 is the only handle on it, so keep it.</p>
 ${codeBlock("response", `{"key":"${key}","url":"${baseUrl}/${key}"}`)}
+<p>For example, publish a seven-day report at
+<code>${baseUrl}/7d/REPORT.md</code>. Its returned read and delete URL will also
+start with <code>/7d/</code>.</p>
 
 <h2>Read</h2>
 ${codeBlock("read", `curl ${baseUrl}/${key}`)}

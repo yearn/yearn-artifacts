@@ -66,6 +66,12 @@ function bucket(
     async delete(key: string) {
       deletes.push(key);
       delete objects[key];
+    },
+    async list(options: { cursor?: string; delimiter?: string; limit?: number } = {}) {
+      const rootObjects = Object.keys(objects)
+        .filter((key) => !options.delimiter || !key.includes(options.delimiter))
+        .map((key) => ({ key }));
+      return { objects: rootObjects, truncated: false };
     }
   };
 }
@@ -83,7 +89,12 @@ let extensionOf: (name: string) => string;
 let metadataFromHeaders: (headers: Headers, originalName: string) => Record<string, string>;
 let cacheKeyFor: (url: string) => Request;
 let createdDate: (uploaded: Date) => string;
-let expirationDate: (uploaded: Date) => string;
+let expirationDate: (
+  uploaded: Date,
+  tier?: "1d" | "7d" | "30d" | "90d" | "1y" | "archive"
+) => string;
+let reportRoute: (pathname: string) => { tier: string; key: string } | null;
+let storedKey: (tier: "1d" | "7d" | "30d" | "90d" | "1y" | "archive", key: string) => string;
 
 before(async () => {
   const module = await import("../src/index.ts");
@@ -97,12 +108,23 @@ before(async () => {
   cacheKeyFor = module.cacheKeyFor;
   createdDate = module.createdDate;
   expirationDate = module.expirationDate;
+  reportRoute = module.reportRoute;
+  storedKey = module.storedKey;
 });
 
 describe("report expiration", () => {
   it("formats the upload date plus 30 days", () => {
     assert.equal(createdDate(new Date("2026-08-09T12:00:00Z")), "2026-08-09");
     assert.equal(expirationDate(new Date("2026-08-09T12:00:00Z")), "2026-09-08");
+  });
+
+  it("formats each tier and leaves archive reports without an expiry", () => {
+    const uploaded = new Date("2026-08-09T12:00:00Z");
+    assert.equal(expirationDate(uploaded, "1d"), "2026-08-10");
+    assert.equal(expirationDate(uploaded, "7d"), "2026-08-16");
+    assert.equal(expirationDate(uploaded, "90d"), "2026-11-07");
+    assert.equal(expirationDate(uploaded, "1y"), "2027-08-09");
+    assert.equal(expirationDate(uploaded, "archive"), "Never");
   });
 });
 
@@ -134,9 +156,43 @@ describe("DELETE /<key>", () => {
       ctx
     );
     assert.equal(response.status, 200);
-    assert.deepEqual(target.BUCKET.deletes, [KEY, "0123456789abcdef0123456789abcdef.png"]);
+    assert.deepEqual(target.BUCKET.deletes, [
+      `30d/${KEY}`,
+      "30d/0123456789abcdef0123456789abcdef.png",
+      KEY,
+      "0123456789abcdef0123456789abcdef.png"
+    ]);
 
     const after = await worker.fetch(new Request(`https://x.test/${KEY}`), target, ctx);
+    assert.equal(after.status, 404);
+  });
+
+  // Lifecycle rules never touch archive/, so this route is the only way an
+  // archive report ever gets removed.
+  it("removes an archive report and its cached copy", async () => {
+    const target = {
+      BUCKET: bucket({ [`archive/${KEY}`]: "# Findings\n" }),
+      PUBLISH_KEYS: "key-one"
+    };
+
+    const first = await worker.fetch(new Request(`https://x.test/archive/${KEY}`), target, ctx);
+    assert.equal(first.status, 200);
+
+    const response = await worker.fetch(
+      new Request(`https://x.test/archive/${KEY}`, {
+        method: "DELETE",
+        headers: { authorization: "Bearer key-one" }
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(target.BUCKET.deletes, [
+      `archive/${KEY}`,
+      "archive/0123456789abcdef0123456789abcdef.png"
+    ]);
+
+    const after = await worker.fetch(new Request(`https://x.test/archive/${KEY}`), target, ctx);
     assert.equal(after.status, 404);
   });
 
@@ -214,6 +270,21 @@ describe("key handling", () => {
     assert.equal(contentTypeForName("a.sarif"), "application/sarif+json");
     assert.equal(contentTypeForName("a.bin"), "application/octet-stream");
   });
+
+  it("maps root paths to 30 days and recognizes explicit tiers", () => {
+    assert.deepEqual(reportRoute(`/${KEY}`), { tier: "30d", key: KEY });
+    assert.deepEqual(reportRoute(`/7d/${KEY}`), { tier: "7d", key: KEY });
+    assert.deepEqual(reportRoute(`/archive/${KEY}`), { tier: "archive", key: KEY });
+    assert.equal(reportRoute(`/30d/${KEY}`), null);
+    assert.equal(reportRoute(`/unknown/${KEY}`), null);
+    assert.equal(reportRoute(`/7d/nested/${KEY}`), null);
+    // Inherited object-prototype names must not read as tiers: a report stored
+    // under such a prefix would never be matched by any lifecycle delete rule.
+    assert.equal(reportRoute(`/toString/${KEY}`), null);
+    assert.equal(reportRoute(`/constructor/${KEY}`), null);
+    assert.equal(reportRoute(`/hasOwnProperty/${KEY}`), null);
+    assert.equal(storedKey("30d", KEY), `30d/${KEY}`);
+  });
 });
 
 describe("GET /", () => {
@@ -230,6 +301,39 @@ describe("GET /", () => {
       ctx
     );
     assert.equal(response.status, 405);
+  });
+});
+
+describe("POST /_migrate-retention-prefixes", () => {
+  it("moves legacy root reports without exposing their names", async () => {
+    const target = {
+      BUCKET: bucket({ [KEY]: "# Findings\n" }),
+      PUBLISH_KEYS: "key-one"
+    };
+    const response = await worker.fetch(
+      new Request("https://x.test/_migrate-retention-prefixes", {
+        method: "POST",
+        headers: { authorization: "Bearer key-one" }
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { migrated: 1, done: true });
+    assert.equal(target.BUCKET.puts[`30d/${KEY}`].body, "# Findings\n");
+    assert.deepEqual(target.BUCKET.deletes, [KEY]);
+  });
+
+  it("requires publisher authentication", async () => {
+    const target = { BUCKET: bucket({ [KEY]: "# Findings\n" }), PUBLISH_KEYS: "key-one" };
+    const response = await worker.fetch(
+      new Request("https://x.test/_migrate-retention-prefixes", { method: "POST" }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(target.BUCKET.puts, {});
+    assert.deepEqual(target.BUCKET.deletes, []);
   });
 });
 
@@ -346,9 +450,9 @@ describe("POST /<key>", () => {
     // The posted name is public information, so it must not become the key.
     assert.match(body.key, /^[0-9a-f]{32}\.md$/);
     assert.equal(body.url, `https://x.test/${body.key}`);
-    assert.equal(target.BUCKET.puts[body.key].body, "# Findings\n");
+    assert.equal(target.BUCKET.puts[`30d/${body.key}`].body, "# Findings\n");
     const thumbnail = `${body.key.slice(0, 32)}.png`;
-    assert.equal(thumbnail in target.BUCKET.puts, true);
+    assert.equal(`30d/${thumbnail}` in target.BUCKET.puts, true);
     assert.equal(POST_NAME in target.BUCKET.puts, false);
 
     assert.equal(target.BROWSER.calls.length, 1);
@@ -377,7 +481,9 @@ describe("POST /<key>", () => {
       ctx
     );
     const { key } = (await response.json()) as { key: string };
-    const options = target.BUCKET.puts[key].options as { customMetadata: Record<string, string> };
+    const options = target.BUCKET.puts[`30d/${key}`].options as {
+      customMetadata: Record<string, string>
+    };
     assert.deepEqual(options.customMetadata, {
       repository: "yearn/section9",
       commit: "a1b2c3d",
@@ -462,5 +568,75 @@ describe("POST /<key>", () => {
     );
     assert.equal(response.status, 201);
     assert.equal(target.BROWSER.calls.length, 0);
+  });
+
+  it("publishes, reads, and deletes an explicit retention tier", async () => {
+    const target = env();
+    const published = await worker.fetch(
+      new Request("https://x.test/7d/REPORT.md", {
+        method: "POST",
+        headers: { authorization: "Bearer key-one" },
+        body: "# Findings\n"
+      }),
+      target,
+      ctx
+    );
+    const body = (await published.json()) as { key: string; url: string };
+    assert.equal(body.url, `https://x.test/7d/${body.key}`);
+    assert.equal(`7d/${body.key}` in target.BUCKET.puts, true);
+
+    const objects = Object.fromEntries(
+      Object.entries(target.BUCKET.puts).map(([key, value]) => [key, value.body])
+    );
+    const readable = { ...target, BUCKET: bucket(objects) };
+    cacheStore.clear();
+    const read = await worker.fetch(new Request(body.url), readable, ctx);
+    assert.match(await read.text(), /Expires: 2026-08-16/);
+
+    const removed = await worker.fetch(
+      new Request(body.url, {
+        method: "DELETE",
+        headers: { authorization: "Bearer key-one" }
+      }),
+      readable,
+      ctx
+    );
+    assert.equal(removed.status, 200);
+    assert.deepEqual(readable.BUCKET.deletes, [
+      `7d/${body.key}`,
+      `7d/${body.key.slice(0, 32)}.png`
+    ]);
+  });
+
+  it("renders archive reports without an expiration date", async () => {
+    cacheStore.clear();
+    const response = await worker.fetch(
+      new Request(`https://x.test/archive/${KEY}`),
+      { BUCKET: bucket({ [`archive/${KEY}`]: "# Findings\n" }) },
+      ctx
+    );
+    assert.match(await response.text(), /Expires: Never/);
+  });
+
+  it("rejects unknown, nested, and prototype-derived retention paths", async () => {
+    for (const path of [
+      `unknown/${POST_NAME}`,
+      `7d/nested/${POST_NAME}`,
+      `toString/${POST_NAME}`,
+      `constructor/${POST_NAME}`
+    ]) {
+      const target = env();
+      const response = await worker.fetch(
+        new Request(`https://x.test/${path}`, {
+          method: "POST",
+          headers: { authorization: "Bearer key-one" },
+          body: "x"
+        }),
+        target,
+        ctx
+      );
+      assert.equal(response.status, 400);
+      assert.deepEqual(target.BUCKET.puts, {});
+    }
   });
 });

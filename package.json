@@ -7,6 +7,7 @@
   "packageManager": "pnpm@11.3.0",
   "scripts": {
     "provision": "bash scripts/provision-r2.sh",
+    "migrate": "bash scripts/migrate-retention-prefixes.sh",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",

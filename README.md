@@ -24,11 +24,14 @@ metadata.
 ## Names
 
 Post to any file name. Only the extension is read, and it decides the content
-type the report is served with. The report is stored under a random name:
+type the report is served with. The report is stored under a retention prefix
+and a random name:
 
 ```text
-<32 hex characters>.<ext>
+<retention>/<32 hex characters>.<ext>
 ```
+
+The default public URL omits its internal `30d/` prefix.
 
 ## Endpoints
 
@@ -48,16 +51,26 @@ Bump `RENDER_VERSION` in `src/index.ts` when the rendered output changes.
 
 ## Retention
 
-Reports expire 30 days after publish, via an R2 lifecycle rule on the bucket:
+Reports expire 30 days after publish by default. A path prefix selects another
+retention tier:
 
-```bash
-pnpm exec wrangler r2 bucket lifecycle add artifacts \
-  expire-reports "" --expire-days 30
+```text
+/1d/<name>        1 day
+/7d/<name>        7 days
+/<name>           30 days (default)
+/90d/<name>       90 days
+/1y/<name>        1 year
+/archive/<name>   no automatic expiration
 ```
 
-A report URL is the only handle on it, and those live in CI logs and chat
-messages that age out sooner than that. Anything worth keeping longer belongs
-in a deliberate archive, not in this bucket.
+R2 lifecycle rules apply to matching internal object prefixes and perform the
+deletion automatically. Lifecycle deletion is asynchronous and may take about
+24 hours after the displayed expiration date. Archive reports remain removable
+through the authenticated DELETE endpoint.
+
+The lifecycle configuration also aborts incomplete multipart uploads after
+seven days. The Worker never starts multipart uploads, so that rule is
+defensive hygiene for the bucket, not part of report retention.
 
 ## Setup
 
@@ -86,6 +99,25 @@ Deploy:
 pnpm deploy
 ```
 
+### One-time retention migration
+
+The retention-tier rollout moves reports published before tier prefixes were
+introduced from the bucket root into `30d/`. Deploy the tier-aware Worker, run
+the authenticated migration, then install the prefix lifecycle configuration:
+
+```bash
+pnpm deploy
+pnpm migrate
+pnpm provision
+```
+
+`pnpm migrate` uses `ARTIFACTS_URL` and `ARTIFACTS_API_KEY`, processes root
+objects in bounded pages, and reports counts without exposing object names.
+Existing public report URLs do not change. Copying resets the R2 upload date,
+so migrated reports receive 30 days from migration. Once migration is verified,
+remove the temporary migration route and legacy root-key fallback from
+`src/index.ts`, along with this script.
+
 ## Publish a Report
 
 ```bash
@@ -109,6 +141,17 @@ The command prints JSON:
 ```
 
 Open that URL to read the rendered report.
+
+To select another retention tier, include it before the posted name:
+
+```bash
+curl -X POST "$ARTIFACTS_URL/7d/REPORT.md" \
+  -H "Authorization: Bearer $PUBLISH_KEY" \
+  -H "Content-Type: text/markdown" \
+  --data-binary @REPORT.md
+```
+
+The returned read and delete URL will include the same `/7d/` tier.
 
 ## Unpublish a Report
 

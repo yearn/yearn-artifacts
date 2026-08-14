@@ -1,0 +1,42 @@
+{
+  "rules": [
+    {
+      "id": "expire-reports-1d",
+      "enabled": true,
+      "conditions": { "prefix": "1d/" },
+      "deleteObjectsTransition": { "condition": { "type": "Age", "maxAge": 86400 } }
+    },
+    {
+      "id": "expire-reports-7d",
+      "enabled": true,
+      "conditions": { "prefix": "7d/" },
+      "deleteObjectsTransition": { "condition": { "type": "Age", "maxAge": 604800 } }
+    },
+    {
+      "id": "expire-reports-30d",
+      "enabled": true,
+      "conditions": { "prefix": "30d/" },
+      "deleteObjectsTransition": { "condition": { "type": "Age", "maxAge": 2592000 } }
+    },
+    {
+      "id": "expire-reports-90d",
+      "enabled": true,
+      "conditions": { "prefix": "90d/" },
+      "deleteObjectsTransition": { "condition": { "type": "Age", "maxAge": 7776000 } }
+    },
+    {
+      "id": "expire-reports-1y",
+      "enabled": true,
+      "conditions": { "prefix": "1y/" },
+      "deleteObjectsTransition": { "condition": { "type": "Age", "maxAge": 31536000 } }
+    },
+    {
+      "id": "abort-incomplete-multipart-uploads",
+      "enabled": true,
+      "conditions": { "prefix": "" },
+      "abortMultipartUploadsTransition": {
+        "condition": { "type": "Age", "maxAge": 604800 }
+      }
+    }
+  ]
+}

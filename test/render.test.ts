@@ -35,6 +35,14 @@ describe("markdown rendering", () => {
     assert.match(page, /<div>Expires: 2026-09-08<\/div>/);
   });
 
+  it("shows the confidentiality notice at the head and foot", () => {
+    const page = renderMarkdown("hi\n", "abc.md");
+    const notices = page.match(/Yearn Confidential &mdash; Do Not Distribute/g);
+    assert.equal(notices?.length, 2);
+    assert.match(page, /<header class="page-header"><div class="confidentiality-notice"/);
+    assert.match(page, /<footer class="page-footer"><div class="confidentiality-notice"/);
+  });
+
   it("escapes a key that contains markup", () => {
     const page = renderMarkdown("hi\n", "reports/<script>/REPORT.md");
     assert.doesNotMatch(page, /<script>\/REPORT/);
@@ -91,5 +99,13 @@ describe("landing page", () => {
     assert.match(page, /GET {4}\/&lt;name&gt;/);
     assert.match(page, /POST {3}\/&lt;anything&gt;/);
     assert.match(page, /DELETE \/&lt;name&gt;/);
+  });
+
+  it("documents retention tiers and archive deletion", () => {
+    const page = renderLandingPage("https://x.test");
+    assert.match(page, /\/7d\/&lt;name&gt;/);
+    assert.match(page, /30 days \(default\)/);
+    assert.match(page, /\/archive\/&lt;name&gt;/);
+    assert.match(page, /Archive reports remain removable/);
   });
 });
