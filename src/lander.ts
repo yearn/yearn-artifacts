@@ -90,8 +90,9 @@ name to choose a different lifetime:</p>
 <p>Archive reports remain removable through the authenticated DELETE endpoint.</p>
 
 <h2>Publish</h2>
-<p>Post to any name. Only the extension is read, and it decides how the report
-is served back.</p>
+<p>Post to any single-segment name, optionally preceded by one of the retention
+tiers above. Only the extension is read, and it decides how the report is served
+back; any other path shape is rejected with a 400.</p>
 ${codeBlock("publish", `curl -X POST ${baseUrl}/REPORT.md \\
   -H "Authorization: Bearer $ARTIFACTS_API_KEY" \\
   -H "Content-Type: text/markdown" \\

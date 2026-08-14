@@ -347,7 +347,13 @@ export default {
         : text("invalid key", 400);
     }
     if (request.method === "POST") {
-      return route ? handlePublish(request, env, route) : text("invalid path", 400);
+      const tiers = Object.keys(RETENTION_TIERS)
+        .filter((tier) => tier !== DEFAULT_TIER)
+        .map((tier) => `/${tier}/<name>`)
+        .join(", ");
+      return route
+        ? handlePublish(request, env, route)
+        : text(`invalid path: publish to /<name> (${DEFAULT_TIER} default) or ${tiers}`, 400);
     }
     return text("method not allowed", 405);
   }
