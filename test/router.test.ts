@@ -167,6 +167,35 @@ describe("DELETE /<key>", () => {
     assert.equal(after.status, 404);
   });
 
+  // Lifecycle rules never touch archive/, so this route is the only way an
+  // archive report ever gets removed.
+  it("removes an archive report and its cached copy", async () => {
+    const target = {
+      BUCKET: bucket({ [`archive/${KEY}`]: "# Findings\n" }),
+      PUBLISH_KEYS: "key-one"
+    };
+
+    const first = await worker.fetch(new Request(`https://x.test/archive/${KEY}`), target, ctx);
+    assert.equal(first.status, 200);
+
+    const response = await worker.fetch(
+      new Request(`https://x.test/archive/${KEY}`, {
+        method: "DELETE",
+        headers: { authorization: "Bearer key-one" }
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(target.BUCKET.deletes, [
+      `archive/${KEY}`,
+      "archive/0123456789abcdef0123456789abcdef.png"
+    ]);
+
+    const after = await worker.fetch(new Request(`https://x.test/archive/${KEY}`), target, ctx);
+    assert.equal(after.status, 404);
+  });
+
   it("rejects an unauthorized delete without touching the bucket", async () => {
     const target = env();
     const response = await worker.fetch(
