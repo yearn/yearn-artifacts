@@ -249,6 +249,11 @@ describe("key handling", () => {
     assert.equal(reportRoute(`/30d/${KEY}`), null);
     assert.equal(reportRoute(`/unknown/${KEY}`), null);
     assert.equal(reportRoute(`/7d/nested/${KEY}`), null);
+    // Inherited object-prototype names must not read as tiers: a report stored
+    // under such a prefix would never be matched by any lifecycle delete rule.
+    assert.equal(reportRoute(`/toString/${KEY}`), null);
+    assert.equal(reportRoute(`/constructor/${KEY}`), null);
+    assert.equal(reportRoute(`/hasOwnProperty/${KEY}`), null);
     assert.equal(storedKey("30d", KEY), `30d/${KEY}`);
   });
 });
@@ -584,8 +589,13 @@ describe("POST /<key>", () => {
     assert.match(await response.text(), /Expires: Never/);
   });
 
-  it("rejects unknown and nested retention paths", async () => {
-    for (const path of [`unknown/${POST_NAME}`, `7d/nested/${POST_NAME}`]) {
+  it("rejects unknown, nested, and prototype-derived retention paths", async () => {
+    for (const path of [
+      `unknown/${POST_NAME}`,
+      `7d/nested/${POST_NAME}`,
+      `toString/${POST_NAME}`,
+      `constructor/${POST_NAME}`
+    ]) {
       const target = env();
       const response = await worker.fetch(
         new Request(`https://x.test/${path}`, {

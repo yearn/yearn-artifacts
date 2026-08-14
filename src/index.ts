@@ -44,7 +44,9 @@ export function reportRoute(pathname: string): ReportRoute | null {
     parts.length !== 2
     || !parts[1]
     || parts[0] === DEFAULT_TIER
-    || !(parts[0] in RETENTION_TIERS)
+    // Object.hasOwn, not `in`: inherited names like "toString" must not pass
+    // as tiers, or a report lands under a prefix no lifecycle rule deletes.
+    || !Object.hasOwn(RETENTION_TIERS, parts[0])
   ) return null;
   return { tier: parts[0] as RetentionTier, key: parts[1] };
 }
