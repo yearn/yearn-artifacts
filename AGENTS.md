@@ -25,9 +25,11 @@ Provenance travels as R2 custom metadata from optional `X-Report-*` request
 headers, never in the key. Only the documented fields are stored, so adding one
 means adding it to the allowed list rather than copying arbitrary headers.
 
-Reports expire after 30 days under the `expire-reports` lifecycle rule. Reads
-are unauthenticated, so a retained report is standing exposure; do not lengthen
-the window to make this bucket serve as an archive.
+Reports use prefix-scoped R2 lifecycle rules: `1d/`, `7d/`, `30d/`, `90d/`,
+and `1y/` expire after their named period; `archive/` has no automatic
+expiration. Reads are unauthenticated, so every retained report is standing
+exposure. Archive means only that lifecycle deletion is disabled: authenticated
+DELETE must continue to remove archived reports.
 
 Report content comes from repositories we do not control. Render it with raw
 HTML disabled and escape any value interpolated into a page.
@@ -35,12 +37,14 @@ HTML disabled and escape any value interpolated into a page.
 The stored R2 object key format is:
 
 ```text
-<32 hex characters>.<ext>
+<retention>/<32 hex characters>.<ext>
 ```
 
-Markdown reports also have a `<same 32 hex characters>.png` thumbnail. Its key
-is stored in the report's custom metadata and it must be removed with the
-report.
+The default public URL omits `30d/`, but its stored R2 key includes it.
+
+Markdown reports also have a `<retention>/<same 32 hex characters>.png`
+thumbnail. Its name is stored in the report's custom metadata and it must be
+removed with the report.
 
 A stored key is never reused, so a published report never changes. That is what
 makes the 24 hour cache safe.

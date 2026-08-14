@@ -40,7 +40,12 @@ export function reportRoute(pathname: string): ReportRoute | null {
   const path = keyFromPathname(pathname);
   const parts = path.split("/");
   if (parts.length === 1 && parts[0]) return { tier: DEFAULT_TIER, key: parts[0] };
-  if (parts.length !== 2 || !parts[1] || !(parts[0] in RETENTION_TIERS)) return null;
+  if (
+    parts.length !== 2
+    || !parts[1]
+    || parts[0] === DEFAULT_TIER
+    || !(parts[0] in RETENTION_TIERS)
+  ) return null;
   return { tier: parts[0] as RetentionTier, key: parts[1] };
 }
 
@@ -69,7 +74,8 @@ export function keyFromPathname(pathname: string): string {
   return decodeURIComponent(pathname.replace(/^\/+/, ""));
 }
 
-// Stored keys are always <32 hex>.<ext>, so anything else cannot name a report.
+// The report-name component is always <32 hex>.<ext>; the retention prefix is
+// parsed separately before this validation.
 export function isValidKey(key: string): boolean {
   return /^[0-9a-f]{32}\.[a-z0-9]{1,16}$/.test(key);
 }
@@ -274,6 +280,38 @@ async function handleDelete(request: Request, env: Env, route: ReportRoute): Pro
   });
 }
 
+// Temporary authenticated migration for objects published before retention
+// prefixes existed. It deliberately returns counts rather than object names so
+// it cannot become a report listing endpoint. Remove after migration succeeds.
+async function handleMigration(request: Request, env: Env): Promise<Response> {
+  if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
+    return text("unauthorized", 401);
+  }
+
+  const cursor = new URL(request.url).searchParams.get("cursor") ?? undefined;
+  const page = await env.BUCKET.list({ delimiter: "/", cursor, limit: 100 });
+  let migrated = 0;
+  for (const listed of page.objects) {
+    if (!isValidKey(listed.key)) continue;
+    const object = await env.BUCKET.get(listed.key);
+    if (!object) continue;
+    await env.BUCKET.put(storedKey(DEFAULT_TIER, listed.key), object.body, {
+      httpMetadata: object.httpMetadata,
+      customMetadata: object.customMetadata
+    });
+    await env.BUCKET.delete(listed.key);
+    migrated += 1;
+  }
+
+  return new Response(JSON.stringify({
+    migrated,
+    done: !page.truncated,
+    ...(page.truncated ? { cursor: page.cursor } : {})
+  }) + "\n", {
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -283,6 +321,12 @@ export default {
     // The runtime strips the body from a HEAD response, so HEAD can share the
     // GET path and still report accurate status and headers.
     const isRead = request.method === "GET" || request.method === "HEAD";
+
+    if (url.pathname === "/_migrate-retention-prefixes") {
+      return request.method === "POST"
+        ? handleMigration(request, env)
+        : text("method not allowed", 405);
+    }
 
     if (key === "") {
       return isRead ? html(renderLandingPage(url.origin)) : text("method not allowed", 405);

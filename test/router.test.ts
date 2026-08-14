@@ -66,6 +66,12 @@ function bucket(
     async delete(key: string) {
       deletes.push(key);
       delete objects[key];
+    },
+    async list(options: { cursor?: string; delimiter?: string; limit?: number } = {}) {
+      const rootObjects = Object.keys(objects)
+        .filter((key) => !options.delimiter || !key.includes(options.delimiter))
+        .map((key) => ({ key }));
+      return { objects: rootObjects, truncated: false };
     }
   };
 }
@@ -240,6 +246,7 @@ describe("key handling", () => {
     assert.deepEqual(reportRoute(`/${KEY}`), { tier: "30d", key: KEY });
     assert.deepEqual(reportRoute(`/7d/${KEY}`), { tier: "7d", key: KEY });
     assert.deepEqual(reportRoute(`/archive/${KEY}`), { tier: "archive", key: KEY });
+    assert.equal(reportRoute(`/30d/${KEY}`), null);
     assert.equal(reportRoute(`/unknown/${KEY}`), null);
     assert.equal(reportRoute(`/7d/nested/${KEY}`), null);
     assert.equal(storedKey("30d", KEY), `30d/${KEY}`);
@@ -260,6 +267,39 @@ describe("GET /", () => {
       ctx
     );
     assert.equal(response.status, 405);
+  });
+});
+
+describe("POST /_migrate-retention-prefixes", () => {
+  it("moves legacy root reports without exposing their names", async () => {
+    const target = {
+      BUCKET: bucket({ [KEY]: "# Findings\n" }),
+      PUBLISH_KEYS: "key-one"
+    };
+    const response = await worker.fetch(
+      new Request("https://x.test/_migrate-retention-prefixes", {
+        method: "POST",
+        headers: { authorization: "Bearer key-one" }
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { migrated: 1, done: true });
+    assert.equal(target.BUCKET.puts[`30d/${KEY}`].body, "# Findings\n");
+    assert.deepEqual(target.BUCKET.deletes, [KEY]);
+  });
+
+  it("requires publisher authentication", async () => {
+    const target = { BUCKET: bucket({ [KEY]: "# Findings\n" }), PUBLISH_KEYS: "key-one" };
+    const response = await worker.fetch(
+      new Request("https://x.test/_migrate-retention-prefixes", { method: "POST" }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(target.BUCKET.puts, {});
+    assert.deepEqual(target.BUCKET.deletes, []);
   });
 });
 

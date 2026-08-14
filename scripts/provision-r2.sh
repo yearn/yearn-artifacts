@@ -2,6 +2,8 @@
 set -euo pipefail
 
 bucket_name="${R2_BUCKET_NAME:-artifacts}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+lifecycle_file="${script_dir}/../config/r2-lifecycle.json"
 
 create_bucket() {
   local name="$1"
@@ -15,3 +17,6 @@ create_bucket() {
 }
 
 create_bucket "$bucket_name"
+pnpm exec wrangler r2 bucket lifecycle set "$bucket_name" \
+  --file "$lifecycle_file" \
+  --force
