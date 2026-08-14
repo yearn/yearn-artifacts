@@ -27,13 +27,19 @@ th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: l
 th { background: var(--surface); font-weight: 700; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
+:root { --confidential: #b91c1c; }
+:root.dark { --confidential: #f87171; }
+.page { position: relative; }
+.page-header {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  left: 1.5rem;
+  margin: 0;
+}
 .confidentiality-notice {
-  width: 100%;
-  padding: 0.625rem 0.875rem;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  background: var(--surface);
-  color: var(--fg-muted);
+  color: var(--confidential);
+  opacity: 0.3;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   font-size: 0.75rem;
   font-weight: 700;
@@ -41,6 +47,7 @@ img { max-width: 100%; height: auto; }
   text-align: center;
   text-transform: uppercase;
 }
+.page-header .confidentiality-notice { text-align: left; }
 .footer-info { text-align: right; }
 .footer-info div + div { margin-top: 0.25rem; }
 `;
