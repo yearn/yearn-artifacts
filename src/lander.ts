@@ -2,6 +2,10 @@ import { escapeHtml, layout } from "./render";
 import { YEARN_SYMBOL, footerNav } from "./theme";
 
 const REPO_URL = "https://github.com/yearn/yearn-artifacts";
+const DIAGRAM_GALLERY_URL =
+  "https://artifacts.yearn.dev/archive/c5b75a4b2745d0a3fc363093099a2c28.md";
+const DIAGRAM_GALLERY_IMAGE =
+  "https://artifacts.yearn.dev/archive/c5b75a4b2745d0a3fc363093099a2c28.png";
 
 const LANDING_STYLE = `
 .hero h1 { display: flex; align-items: center; gap: 0.75rem; font-size: 1.875rem; font-weight: 700; margin: 0; }
@@ -30,6 +34,8 @@ pre code { background: none; padding: 0; }
 }
 .copy-btn:hover { color: var(--fg); }
 .endpoints, .tiers { font-size: 0.8125rem; }
+.gallery-preview { display: block; border: 1px solid var(--border); border-radius: 0.5rem; overflow: hidden; }
+.gallery-preview img { display: block; width: 100%; height: auto; }
 `;
 
 function codeBlock(id: string, content: string): string {
@@ -57,7 +63,7 @@ export function renderLandingPage(baseUrl: string): string {
 
   const header = `<div class="hero">
 <h1>${YEARN_SYMBOL}Yearn Artifacts</h1>
-<p>Publishes private reports as URLs. Markdown becomes a styled page with an
+<p>Publishes reports as URLs. Markdown becomes a styled page with an
 automatically generated social preview; everything else is served as-is.</p>
 </div>`;
 
@@ -114,6 +120,13 @@ start with <code>/7d/</code>.</p>
 <h2>Read</h2>
 ${codeBlock("read", `curl ${baseUrl}/${key}`)}
 <p>Or open the same URL in a browser to get the rendered report.</p>
+
+<h2>Diagrams</h2>
+<p>Markdown reports can include Mermaid diagrams. See the
+<a href="${DIAGRAM_GALLERY_URL}">gallery</a> for examples of supported diagram types.</p>
+<a class="gallery-preview" href="${DIAGRAM_GALLERY_URL}">
+<img src="${DIAGRAM_GALLERY_IMAGE}" alt="Mermaid diagram gallery">
+</a>
 
 <h2>Unpublish</h2>
 ${codeBlock("delete", `curl -X DELETE ${baseUrl}/${key} \\
