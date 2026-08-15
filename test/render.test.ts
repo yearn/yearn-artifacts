@@ -125,6 +125,12 @@ describe("page title", () => {
 });
 
 describe("landing page", () => {
+  it("describes reports without calling them private", () => {
+    const page = renderLandingPage("https://x.test");
+    assert.match(page, /Publishes reports as URLs/);
+    assert.doesNotMatch(page, /Publishes private reports/);
+  });
+
   it("builds examples from the request origin", () => {
     const page = renderLandingPage("https://artifacts.example.com");
     assert.match(page, /https:\/\/artifacts\.example\.com\/REPORT\.md/);
@@ -144,5 +150,18 @@ describe("landing page", () => {
     assert.match(page, /30 days \(default\)/);
     assert.match(page, /\/archive\/&lt;name&gt;/);
     assert.match(page, /Archive reports remain removable/);
+  });
+
+  it("links the archived Mermaid diagram gallery", () => {
+    const page = renderLandingPage("https://x.test");
+    assert.match(
+      page,
+      /<a href="https:\/\/artifacts\.yearn\.dev\/archive\/c5b75a4b2745d0a3fc363093099a2c28\.md">gallery<\/a> for examples of supported diagram types\./
+    );
+    assert.match(
+      page,
+      /src="https:\/\/artifacts\.yearn\.dev\/archive\/c5b75a4b2745d0a3fc363093099a2c28\.png"/
+    );
+    assert.match(page, /alt="Mermaid diagram gallery"/);
   });
 });
