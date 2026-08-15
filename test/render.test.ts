@@ -57,6 +57,33 @@ describe("markdown rendering", () => {
   });
 });
 
+describe("mermaid diagrams", () => {
+  const diagram = "# Title\n\n```mermaid\ngraph TD\nA-->B\n```\n";
+
+  it("includes the mermaid script when a report has a mermaid fence", () => {
+    const page = renderMarkdown(diagram, "abc.md");
+    assert.match(page, /<code class="language-mermaid">/);
+    assert.ok(page.includes("cdn.jsdelivr.net/npm/mermaid@"));
+    assert.match(page, /securityLevel: "strict"/);
+  });
+
+  it("omits the mermaid script when a report has no mermaid fence", () => {
+    const page = renderMarkdown("# Title\n\n```js\nlet x = 1\n```\n", "abc.md");
+    assert.ok(!page.includes("cdn.jsdelivr.net/npm/mermaid@"));
+  });
+
+  it("omits the mermaid script on the screenshot pass", () => {
+    const page = renderMarkdown(diagram, "abc.md", {}, "", "", "", { screenshot: true });
+    assert.ok(!page.includes("cdn.jsdelivr.net/npm/mermaid@"));
+  });
+
+  it("keeps mermaid source escaped in the served html", () => {
+    const page = renderMarkdown("```mermaid\ngraph TD\nA[<b>x</b>]-->B\n```\n", "abc.md");
+    assert.doesNotMatch(page, /<b>x<\/b>/);
+    assert.match(page, /&lt;b&gt;x&lt;\/b&gt;/);
+  });
+});
+
 describe("page title", () => {
   it("reads the first heading", () => {
     assert.equal(headingOf("# Supply Chain Scan\n\nbody\n"), "Supply Chain Scan");
