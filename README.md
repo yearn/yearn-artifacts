@@ -65,6 +65,12 @@ Diagrams render in the browser, matching the page theme, and appear in the
 social preview image. A diagram that fails to parse falls back to its source
 code block.
 
+The [diagram gallery](https://artifacts.yearn.dev/archive/c5b75a4b2745d0a3fc363093099a2c28.md)
+is a published report demonstrating nine diagram types — flowchart, sequence,
+state, pie, xychart, git graph, timeline, quadrant, and mindmap:
+
+[![Mermaid diagram gallery](https://artifacts.yearn.dev/archive/c5b75a4b2745d0a3fc363093099a2c28.png)](https://artifacts.yearn.dev/archive/c5b75a4b2745d0a3fc363093099a2c28.md)
+
 ## Retention
 
 Reports expire 30 days after publish by default. A path prefix selects another
