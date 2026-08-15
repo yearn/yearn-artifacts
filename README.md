@@ -61,9 +61,9 @@ graph TD
 ```
 ````
 
-Diagrams render in the browser, matching the page theme. A diagram that fails
-to parse falls back to its source code block, and diagrams do not appear in
-the social preview image.
+Diagrams render in the browser, matching the page theme, and appear in the
+social preview image. A diagram that fails to parse falls back to its source
+code block.
 
 ## Retention
 

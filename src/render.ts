@@ -29,6 +29,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
 .mermaid-diagram { margin: 0 0 1rem; overflow-x: auto; }
 .mermaid-diagram svg { display: block; margin: 0 auto; max-width: 100%; }
+/* Mermaid fences hold layout space invisibly until the script replaces them with a
+   diagram, so the page never flashes a wall of diagram source. The animation is the
+   no-JS / unreachable-CDN fallback: the source reveals itself after a beat with no
+   script involved. A render failure reveals it immediately via .mermaid-fallback. */
+pre:has(> code.language-mermaid) { visibility: hidden; animation: mermaid-reveal 0s 3s forwards; }
+pre.mermaid-fallback { visibility: visible; animation: none; }
+@keyframes mermaid-reveal { to { visibility: visible; } }
 :root { --confidential: #b91c1c; }
 :root.dark { --confidential: #f87171; }
 .page { position: relative; }
@@ -68,7 +75,7 @@ export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/me
 export function mermaidScript(): string {
   return `<script type="module">
 const blocks = document.querySelectorAll('pre > code.language-mermaid');
-if (blocks.length) {
+if (blocks.length) try {
   const mermaid = (await import(${JSON.stringify(MERMAID_URL)})).default;
   const diagrams = Array.from(blocks, (code) => {
     const pre = code.parentElement;
@@ -98,6 +105,7 @@ if (blocks.length) {
       } catch {
         d.holder.replaceChildren();
         d.pre.hidden = false;
+        d.pre.classList.add("mermaid-fallback");
       }
     }
   }
@@ -109,8 +117,19 @@ if (blocks.length) {
     dark = now;
     renderAll();
   }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+} finally {
+  // Completion marker for the OG-thumbnail pass, which waits on this selector before
+  // capturing. Set even when the import fails so an unreachable CDN degrades the
+  // thumbnail to code blocks instead of failing the publish.
+  document.documentElement.setAttribute("data-mermaid-done", "");
 }
 <\/script>`;
+}
+
+// Detected on rendered output, not the source: markdown-it has already decided what is a
+// real fence. markdown-it escapes quotes in text, so this marker cannot be forged by content.
+export function hasMermaid(html: string): boolean {
+  return html.includes('<code class="language-mermaid">');
 }
 
 export function escapeHtml(value: string): string {
@@ -240,10 +259,8 @@ export function renderMarkdown(
     ? `${confidentialityNotice}${footerInfo}`
     : `${confidentialityNotice}${footerNav(FOOTER_LINKS)}${footerInfo}`;
   const body = markdown.render(source);
-  // Detected on the rendered output, not the source: markdown-it has already decided what is a
-  // real fence. markdown-it escapes quotes in text, so this marker cannot be forged by content.
-  const hasMermaid = body.includes('<code class="language-mermaid">');
-  const extraScript = hasMermaid && !opts.screenshot ? mermaidScript() : "";
+  // The script now runs on the screenshot pass too, so diagrams appear in OG thumbnails.
+  const extraScript = hasMermaid(body) ? mermaidScript() : "";
   return layout(
     pageTitle(source, key, metadata),
     body,

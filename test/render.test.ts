@@ -65,6 +65,7 @@ describe("mermaid diagrams", () => {
     assert.match(page, /<code class="language-mermaid">/);
     assert.ok(page.includes("cdn.jsdelivr.net/npm/mermaid@"));
     assert.match(page, /securityLevel: "strict"/);
+    assert.match(page, /mermaid-reveal/);
   });
 
   it("omits the mermaid script when a report has no mermaid fence", () => {
@@ -72,9 +73,10 @@ describe("mermaid diagrams", () => {
     assert.ok(!page.includes("cdn.jsdelivr.net/npm/mermaid@"));
   });
 
-  it("omits the mermaid script on the screenshot pass", () => {
+  it("keeps the mermaid script on the screenshot pass so thumbnails show diagrams", () => {
     const page = renderMarkdown(diagram, "abc.md", {}, "", "", "", { screenshot: true });
-    assert.ok(!page.includes("cdn.jsdelivr.net/npm/mermaid@"));
+    assert.ok(page.includes("cdn.jsdelivr.net/npm/mermaid@"));
+    assert.match(page, /data-mermaid-done/);
   });
 
   it("keeps mermaid source escaped in the served html", () => {

@@ -1,6 +1,6 @@
 import { isAuthorized, parseKeys } from "./auth";
 import { renderLandingPage } from "./lander";
-import { renderMarkdown } from "./render";
+import { hasMermaid, MERMAID_URL, renderMarkdown } from "./render";
 
 export interface Env {
   BUCKET: R2Bucket;
@@ -111,7 +111,7 @@ function html(body: string, status = 200): Response {
 // entries are scoped to this value so a rendering change takes effect on
 // existing reports instead of waiting out the day-long TTL. Bump it whenever
 // the rendered output changes.
-const RENDER_VERSION = "15";
+const RENDER_VERSION = "17";
 
 // The Cache API rejects non-GET keys, so HEAD and GET share one normalized
 // entry rather than HEAD throwing inside waitUntil.
@@ -225,11 +225,22 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
       expirationDate(created, route.tier),
       { screenshot: true }
     );
+    // The thumbnail page normally makes no requests at all. When the report has mermaid
+    // diagrams, only the pinned mermaid dist path is allowed through (the ESM build
+    // lazy-loads chunks beside the entry file), and the capture waits for the script's
+    // completion marker so diagrams are drawn before the screenshot. The marker is set
+    // even on CDN failure, degrading the thumbnail to code blocks instead of a 502.
+    const withDiagrams = hasMermaid(rendered);
+    const mermaidDist = MERMAID_URL.slice(0, MERMAID_URL.lastIndexOf("/") + 1);
+    const allowMermaid = `^(?!${mermaidDist.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}).*`;
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       html: rendered,
       viewport: { width: 1200, height: 630 },
       waitForTimeout: 500,
-      rejectRequestPattern: [".*"],
+      rejectRequestPattern: [withDiagrams ? allowMermaid : ".*"],
+      ...(withDiagrams
+        ? { waitForSelector: { selector: "html[data-mermaid-done]", timeout: 10000 } }
+        : {}),
       screenshotOptions: { type: "png", encoding: "binary", fullPage: false }
     });
     if (!screenshot.ok) return text("thumbnail generation failed", 502);
