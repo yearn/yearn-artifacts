@@ -27,6 +27,8 @@ th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: l
 th { background: var(--surface); font-weight: 700; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
+.mermaid-diagram { margin: 0 0 1rem; overflow-x: auto; }
+.mermaid-diagram svg { display: block; margin: 0 auto; max-width: 100%; }
 :root { --confidential: #b91c1c; }
 :root.dark { --confidential: #f87171; }
 .page { position: relative; }
@@ -54,6 +56,63 @@ img { max-width: 100%; height: auto; }
 
 const CONFIDENTIALITY_NOTICE = `<div class="confidentiality-notice" role="note">Yearn Confidential &mdash; Do Not Distribute</div>`;
 
+// Pinned exact version: report pages must not change behavior when a new
+// mermaid release ships. Bump deliberately, with a RENDER_VERSION bump.
+export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.esm.min.mjs";
+
+// Renders \`\`\`mermaid fences client-side. The library is only fetched when the
+// page actually contains a mermaid block, and securityLevel stays "strict"
+// because report content is untrusted. The escaped <pre> is kept as the
+// fallback so a diagram that fails to parse degrades to its source instead of
+// blanking report content. Diagrams re-render when the theme class flips.
+export function mermaidScript(): string {
+  return `<script type="module">
+const blocks = document.querySelectorAll('pre > code.language-mermaid');
+if (blocks.length) {
+  const mermaid = (await import(${JSON.stringify(MERMAID_URL)})).default;
+  const diagrams = Array.from(blocks, (code) => {
+    const pre = code.parentElement;
+    const holder = document.createElement("div");
+    holder.className = "mermaid-diagram";
+    pre.insertAdjacentElement("beforebegin", holder);
+    return { source: code.textContent, holder, pre };
+  });
+  let pass = 0;
+  async function renderAll() {
+    const dark = document.documentElement.classList.contains("dark");
+    // suppressErrorRendering: without it mermaid appends an error graphic to <body> for
+    // every diagram that fails to parse, once per render pass. The fallback here is the
+    // original code block, not mermaid's error art.
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      suppressErrorRendering: true,
+      theme: dark ? "dark" : "neutral"
+    });
+    pass += 1;
+    for (const [i, d] of diagrams.entries()) {
+      try {
+        const { svg } = await mermaid.render("mermaid-" + pass + "-" + i, d.source);
+        d.holder.innerHTML = svg;
+        d.pre.hidden = true;
+      } catch {
+        d.holder.replaceChildren();
+        d.pre.hidden = false;
+      }
+    }
+  }
+  await renderAll();
+  let dark = document.documentElement.classList.contains("dark");
+  new MutationObserver(() => {
+    const now = document.documentElement.classList.contains("dark");
+    if (now === dark) return;
+    dark = now;
+    renderAll();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+}
+<\/script>`;
+}
+
 export function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -71,6 +130,8 @@ export type LayoutOptions = {
   // and headless rendering has no real localStorage/media-query state worth reading), and the
   // theme-toggle control is left out of the capture.
   screenshot?: boolean;
+  // Extra script markup appended at the end of <body>, after the toggle script.
+  extraScript?: string;
 };
 
 export function layout(
@@ -115,7 +176,7 @@ ${body}
 </main>
 ${footer ? `<footer class="page-footer">${footer}</footer>` : ""}
 </div>
-${toggleScript}
+${toggleScript}${opts.extraScript ?? ""}
 </body>
 </html>`;
 }
@@ -178,11 +239,16 @@ export function renderMarkdown(
   const footer = opts.screenshot
     ? `${confidentialityNotice}${footerInfo}`
     : `${confidentialityNotice}${footerNav(FOOTER_LINKS)}${footerInfo}`;
+  const body = markdown.render(source);
+  // Detected on the rendered output, not the source: markdown-it has already decided what is a
+  // real fence. markdown-it escapes quotes in text, so this marker cannot be forged by content.
+  const hasMermaid = body.includes('<code class="language-mermaid">');
+  const extraScript = hasMermaid && !opts.screenshot ? mermaidScript() : "";
   return layout(
     pageTitle(source, key, metadata),
-    markdown.render(source),
+    body,
     footer,
     ogImage,
-    { ...opts, header: confidentialityNotice, extraStyle: REPORT_STYLE }
+    { ...opts, header: confidentialityNotice, extraStyle: REPORT_STYLE, extraScript }
   );
 }

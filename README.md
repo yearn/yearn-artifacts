@@ -49,6 +49,22 @@ Cache entries are scoped to a render version, so a change to the report
 template takes effect on existing reports rather than waiting out the cache.
 Bump `RENDER_VERSION` in `src/index.ts` when the rendered output changes.
 
+## Diagrams
+
+Markdown reports can include [Mermaid](https://mermaid.js.org) diagrams in
+fenced code blocks:
+
+````text
+```mermaid
+graph TD
+  A --> B
+```
+````
+
+Diagrams render in the browser, matching the page theme. A diagram that fails
+to parse falls back to its source code block, and diagrams do not appear in
+the social preview image.
+
 ## Retention
 
 Reports expire 30 days after publish by default. A path prefix selects another
