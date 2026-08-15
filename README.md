@@ -128,6 +128,7 @@ curl -X POST "$ARTIFACTS_URL/REPORT.md" \
   -H "X-Report-Scanner: socket" \
   -H "X-Report-Ref: main" \
   -H "X-Report-Commit: $GITHUB_SHA" \
+  -H "X-Report-Confidential: true" \
   --data-binary @REPORT.md
 ```
 
@@ -169,12 +170,15 @@ Stored names are random, so listing the bucket says nothing about what a report
 is. The optional `X-Report-*` headers are stored as R2 custom metadata:
 
 ```text
-repository  scanner  ref  commit  name
+repository  scanner  ref  commit  name  confidential
 ```
 
 `name` defaults to the posted file name. Values are trimmed to 512 characters,
 and unknown `X-Report-*` headers are ignored. The rendered report shows this
 line in its footer, falling back to the stored name when no metadata was sent.
+When `confidential` is exactly `true`, rendered Markdown and its social preview
+show a `Yearn Confidential — Do Not Distribute` notice. Unset, `false`, and
+other values do not show the notice. This is a visual label, not access control.
 
 ## Access
 
