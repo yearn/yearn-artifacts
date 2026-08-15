@@ -68,7 +68,7 @@ export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/me
 export function mermaidScript(): string {
   return `<script type="module">
 const blocks = document.querySelectorAll('pre > code.language-mermaid');
-if (blocks.length) {
+if (blocks.length) try {
   const mermaid = (await import(${JSON.stringify(MERMAID_URL)})).default;
   const diagrams = Array.from(blocks, (code) => {
     const pre = code.parentElement;
@@ -109,8 +109,19 @@ if (blocks.length) {
     dark = now;
     renderAll();
   }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+} finally {
+  // Completion marker for the OG-thumbnail pass, which waits on this selector before
+  // capturing. Set even when the import fails so an unreachable CDN degrades the
+  // thumbnail to code blocks instead of failing the publish.
+  document.documentElement.setAttribute("data-mermaid-done", "");
 }
 <\/script>`;
+}
+
+// Detected on rendered output, not the source: markdown-it has already decided what is a
+// real fence. markdown-it escapes quotes in text, so this marker cannot be forged by content.
+export function hasMermaid(html: string): boolean {
+  return html.includes('<code class="language-mermaid">');
 }
 
 export function escapeHtml(value: string): string {
@@ -240,10 +251,8 @@ export function renderMarkdown(
     ? `${confidentialityNotice}${footerInfo}`
     : `${confidentialityNotice}${footerNav(FOOTER_LINKS)}${footerInfo}`;
   const body = markdown.render(source);
-  // Detected on the rendered output, not the source: markdown-it has already decided what is a
-  // real fence. markdown-it escapes quotes in text, so this marker cannot be forged by content.
-  const hasMermaid = body.includes('<code class="language-mermaid">');
-  const extraScript = hasMermaid && !opts.screenshot ? mermaidScript() : "";
+  // The script now runs on the screenshot pass too, so diagrams appear in OG thumbnails.
+  const extraScript = hasMermaid(body) ? mermaidScript() : "";
   return layout(
     pageTitle(source, key, metadata),
     body,
