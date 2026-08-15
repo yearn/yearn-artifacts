@@ -97,9 +97,13 @@ ${codeBlock("publish", `curl -X POST ${baseUrl}/REPORT.md \\
   -H "X-Report-Scanner: socket" \\
   -H "X-Report-Ref: main" \\
   -H "X-Report-Commit: $GITHUB_SHA" \\
+  -H "X-Report-Confidential: true" \\
   --data-binary @REPORT.md`)}
 <p>The optional <code>X-Report-*</code> headers are stored as object metadata and
 shown at the foot of the rendered report.</p>
+<p>Set <code>X-Report-Confidential: true</code> to show a confidentiality notice
+on rendered Markdown and its social preview. This is a visual label, not access
+control.</p>
 <p>The report is stored under a random name, returned in the response. That URL
 is the only handle on it, so keep it.</p>
 ${codeBlock("response", `{"key":"${key}","url":"${baseUrl}/${key}"}`)}

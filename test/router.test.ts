@@ -226,8 +226,16 @@ describe("provenance metadata", () => {
   });
 
   it("omits absent fields and ignores unknown headers", () => {
-    const headers = new Headers({ "x-report-scanner": "glasswing", "x-report-secret": "nope" });
-    assert.deepEqual(metadataFromHeaders(headers, "R.md"), { scanner: "glasswing", name: "R.md" });
+    const headers = new Headers({
+      "x-report-scanner": "glasswing",
+      "x-report-confidential": "true",
+      "x-report-secret": "nope"
+    });
+    assert.deepEqual(metadataFromHeaders(headers, "R.md"), {
+      scanner: "glasswing",
+      name: "R.md",
+      confidential: "true"
+    });
   });
 
   it("truncates an oversized value", () => {
@@ -473,7 +481,8 @@ describe("POST /<key>", () => {
         headers: {
           authorization: "Bearer key-one",
           "x-report-repository": "yearn/section9",
-          "x-report-commit": "a1b2c3d"
+          "x-report-commit": "a1b2c3d",
+          "x-report-confidential": "true"
         },
         body: "x"
       }),
@@ -488,8 +497,13 @@ describe("POST /<key>", () => {
       repository: "yearn/section9",
       commit: "a1b2c3d",
       name: POST_NAME,
+      confidential: "true",
       thumbnail: `${key.slice(0, 32)}.png`
     });
+    assert.match(
+      target.BROWSER.calls[0].options.html as string,
+      /Yearn Confidential &mdash; Do Not Distribute/
+    );
   });
 
   it("gives two publishes of the same name different keys", async () => {

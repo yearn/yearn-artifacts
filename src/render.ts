@@ -174,14 +174,15 @@ export function renderMarkdown(
   // No Yearn logo here (see AGENTS.md): report content is untrusted, and this page is rendered
   // for third parties who followed a report link, not for Yearn-branded navigation.
   const footerInfo = `<div class="footer-info">${reportFooter(key, metadata, created, expires)}</div>`;
+  const confidentialityNotice = metadata.confidential === "true" ? CONFIDENTIALITY_NOTICE : "";
   const footer = opts.screenshot
-    ? `${CONFIDENTIALITY_NOTICE}${footerInfo}`
-    : `${CONFIDENTIALITY_NOTICE}${footerNav(FOOTER_LINKS)}${footerInfo}`;
+    ? `${confidentialityNotice}${footerInfo}`
+    : `${confidentialityNotice}${footerNav(FOOTER_LINKS)}${footerInfo}`;
   return layout(
     pageTitle(source, key, metadata),
     markdown.render(source),
     footer,
     ogImage,
-    { ...opts, header: CONFIDENTIALITY_NOTICE, extraStyle: REPORT_STYLE }
+    { ...opts, header: confidentialityNotice, extraStyle: REPORT_STYLE }
   );
 }
