@@ -65,6 +65,7 @@ describe("mermaid diagrams", () => {
     assert.match(page, /<code class="language-mermaid">/);
     assert.ok(page.includes("cdn.jsdelivr.net/npm/mermaid@"));
     assert.match(page, /securityLevel: "strict"/);
+    assert.match(page, /mermaid-reveal/);
   });
 
   it("omits the mermaid script when a report has no mermaid fence", () => {

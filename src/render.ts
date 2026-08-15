@@ -29,6 +29,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
 .mermaid-diagram { margin: 0 0 1rem; overflow-x: auto; }
 .mermaid-diagram svg { display: block; margin: 0 auto; max-width: 100%; }
+/* Mermaid fences hold layout space invisibly until the script replaces them with a
+   diagram, so the page never flashes a wall of diagram source. The animation is the
+   no-JS / unreachable-CDN fallback: the source reveals itself after a beat with no
+   script involved. A render failure reveals it immediately via .mermaid-fallback. */
+pre:has(> code.language-mermaid) { visibility: hidden; animation: mermaid-reveal 0s 3s forwards; }
+pre.mermaid-fallback { visibility: visible; animation: none; }
+@keyframes mermaid-reveal { to { visibility: visible; } }
 :root { --confidential: #b91c1c; }
 :root.dark { --confidential: #f87171; }
 .page { position: relative; }
@@ -98,6 +105,7 @@ if (blocks.length) try {
       } catch {
         d.holder.replaceChildren();
         d.pre.hidden = false;
+        d.pre.classList.add("mermaid-fallback");
       }
     }
   }
