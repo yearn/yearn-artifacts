@@ -95,6 +95,7 @@ let expirationDate: (
 ) => string;
 let reportRoute: (pathname: string) => { tier: string; key: string } | null;
 let storedKey: (tier: "1d" | "7d" | "30d" | "90d" | "1y" | "archive", key: string) => string;
+let screenshotRejectPattern: (origin: string, withDiagrams: boolean) => string;
 
 before(async () => {
   const module = await import("../src/index.ts");
@@ -110,6 +111,28 @@ before(async () => {
   expirationDate = module.expirationDate;
   reportRoute = module.reportRoute;
   storedKey = module.storedKey;
+  screenshotRejectPattern = module.screenshotRejectPattern;
+});
+
+describe("screenshot request allowlist", () => {
+  const rejects = (pattern: string, url: string) => new RegExp(pattern).test(url);
+
+  it("lets same-origin artifacts through and rejects everything else", () => {
+    const pattern = screenshotRejectPattern("https://x.test", false);
+    assert.equal(rejects(pattern, "https://x.test/abc.png"), false);
+    assert.equal(rejects(pattern, "https://x.test/90d/abc.png"), false);
+    assert.equal(rejects(pattern, "https://x.test.evil/abc.png"), true);
+    assert.equal(rejects(pattern, "https://fonts.gstatic.com/a.woff2"), true);
+    assert.equal(rejects(pattern, "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), true);
+  });
+
+  it("also lets the pinned mermaid dist through when the report has diagrams", () => {
+    const pattern = screenshotRejectPattern("https://x.test", true);
+    assert.equal(rejects(pattern, "https://x.test/abc.png"), false);
+    assert.equal(rejects(pattern, "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), false);
+    assert.equal(rejects(pattern, "https://cdn.jsdelivr.net/npm/mermaid@11.0.0/dist/x.mjs"), true);
+    assert.equal(rejects(pattern, "https://fonts.gstatic.com/a.woff2"), true);
+  });
 });
 
 describe("report expiration", () => {
@@ -466,7 +489,12 @@ describe("POST /<key>", () => {
     assert.equal(target.BROWSER.calls.length, 1);
     assert.equal(target.BROWSER.calls[0].action, "screenshot");
     assert.deepEqual(target.BROWSER.calls[0].options.viewport, { width: 1200, height: 630 });
-    assert.deepEqual(target.BROWSER.calls[0].options.rejectRequestPattern, [".*"]);
+    // Same-origin image artifacts are allowed through; nothing else is (no mermaid here).
+    const [reject] = target.BROWSER.calls[0].options.rejectRequestPattern as string[];
+    assert.equal(new RegExp(reject).test("https://x.test/abc.png"), false);
+    assert.equal(new RegExp(reject).test("https://x.test/90d/abc.png"), false);
+    assert.equal(new RegExp(reject).test("https://fonts.gstatic.com/a.woff2"), true);
+    assert.equal(new RegExp(reject).test("https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), true);
     assert.match(
       target.BROWSER.calls[0].options.html as string,
       new RegExp(`property="og:image" content="https://x\\.test/${thumbnail}"`)

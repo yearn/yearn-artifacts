@@ -63,10 +63,12 @@ visual language with yearn-uptime-kuma-status (Aeonik + JetBrains Mono, the
 same oklch light/dark palette, a device/light/dark toggle), reimplemented as
 self-contained CSS in `src/theme.ts` instead of that repo's Tailwind CDN
 script. The report page is also rendered headless to produce each report's OG
-thumbnail (`BROWSER.quickAction` with `rejectRequestPattern: [".*"]`, which
-blocks every network request during the capture) — a runtime CSS framework
-would never generate any styles for that pass, which is why this stays
-hand-written CSS. Only `renderMarkdown`'s `{ screenshot: true }` path skips
+thumbnail (`BROWSER.quickAction` with a `rejectRequestPattern` built by
+`screenshotRejectPattern`, which blocks every network request during the
+capture except same-origin artifacts — so embedded `<img>` infographics
+appear — and, for reports with diagrams, the pinned mermaid dist) — a runtime
+CSS framework would never generate any styles for that pass, which is why this
+stays hand-written CSS. Only `renderMarkdown`'s `{ screenshot: true }` path skips
 the boot/toggle scripts and hardcodes the theme, for a deterministic capture.
 
 The report page carries no Yearn logo: its content comes from repositories we

@@ -198,6 +198,15 @@ export function metadataFromHeaders(
   return metadata;
 }
 
+// Regex for the screenshot pass's rejectRequestPattern: rejects every URL except those under the
+// allowed prefixes (same-origin artifacts, plus the mermaid dist directory when needed).
+export function screenshotRejectPattern(origin: string, withDiagrams: boolean): string {
+  const prefixes = [`${origin}/`];
+  if (withDiagrams) prefixes.push(MERMAID_URL.slice(0, MERMAID_URL.lastIndexOf("/") + 1));
+  const escaped = prefixes.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return `^(?!${escaped.join("|")}).*`;
+}
+
 async function handlePublish(request: Request, env: Env, route: ReportRoute): Promise<Response> {
   if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
     return text("unauthorized", 401);
@@ -225,19 +234,19 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
       expirationDate(created, route.tier),
       { screenshot: true }
     );
-    // The thumbnail page normally makes no requests at all. When the report has mermaid
-    // diagrams, only the pinned mermaid dist path is allowed through (the ESM build
-    // lazy-loads chunks beside the entry file), and the capture waits for the script's
-    // completion marker so diagrams are drawn before the screenshot. The marker is set
-    // even on CDN failure, degrading the thumbnail to code blocks instead of a 502.
+    // The thumbnail page is allowed two kinds of request: images published here (reports embed
+    // their own infographics as <img> artifacts on this origin) and, when the report has mermaid
+    // diagrams, the pinned mermaid dist path (the ESM build lazy-loads chunks beside the entry
+    // file). Everything else is rejected so the capture doesn't depend on third parties. With
+    // diagrams, the capture also waits for the script's completion marker so they are drawn
+    // before the screenshot. The marker is set even on CDN failure, degrading the thumbnail to
+    // code blocks instead of a 502.
     const withDiagrams = hasMermaid(rendered);
-    const mermaidDist = MERMAID_URL.slice(0, MERMAID_URL.lastIndexOf("/") + 1);
-    const allowMermaid = `^(?!${mermaidDist.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}).*`;
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       html: rendered,
       viewport: { width: 1200, height: 630 },
       waitForTimeout: 500,
-      rejectRequestPattern: [withDiagrams ? allowMermaid : ".*"],
+      rejectRequestPattern: [screenshotRejectPattern(url.origin, withDiagrams)],
       ...(withDiagrams
         ? { waitForSelector: { selector: "html[data-mermaid-done]", timeout: 10000 } }
         : {}),
