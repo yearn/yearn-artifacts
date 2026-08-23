@@ -32,8 +32,8 @@ const cacheStore = new Map<string, Response>();
       for (const { selector, handler } of this.handlers) {
         if (selector !== "head") throw new Error(`unsupported selector ${selector}`);
         handler.element({
-          prepend(markup: string) {
-            body = body.replace(/<head[^>]*>/i, (tag) => tag + markup);
+          append(markup: string) {
+            body = body.replace(/<\/head>/i, (tag) => markup + tag);
           }
         });
       }
@@ -491,12 +491,12 @@ describe("GET /<key>", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
     const body = await response.text();
+    // Appended after the document's own head content, so its <meta charset> stays early.
     assert.match(
       body,
-      /<head><meta property="og:image" content="https:\/\/x\.test\/0123456789abcdef0123456789abcdef\.png">/
+      /<title>Doc<\/title><meta property="og:image" content="https:\/\/x\.test\/0123456789abcdef0123456789abcdef\.png">/
     );
-    assert.match(body, /<meta name="twitter:card" content="summary_large_image">/);
-    assert.match(body, /<title>Doc<\/title>/);
+    assert.match(body, /<meta name="twitter:image" content="[^"]*"><\/head>/);
   });
 
   it("serves HTML documents without a thumbnail untouched", async () => {

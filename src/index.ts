@@ -165,10 +165,11 @@ async function handleGet(
       }
     });
     // Published HTML documents are served as-is, apart from the social-preview tags for their
-    // thumbnail, which are streamed into <head> so link unfurls show the capture.
+    // thumbnail, which are streamed into <head> so link unfurls show the capture. Appended, not
+    // prepended: the document's own <meta charset> has to stay within the first 1024 bytes.
     if (contentType === HTML_TYPE && thumbnailUrl) {
       response = new HTMLRewriter()
-        .on("head", { element(head) { head.prepend(socialMeta(thumbnailUrl), { html: true }); } })
+        .on("head", { element(head) { head.append(socialMeta(thumbnailUrl), { html: true }); } })
         .transform(response);
     }
   }
