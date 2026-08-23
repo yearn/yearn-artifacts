@@ -42,9 +42,11 @@ The stored R2 object key format is:
 
 The default public URL omits `30d/`, but its stored R2 key includes it.
 
-Markdown reports also have a `<retention>/<same 32 hex characters>.png`
-thumbnail. Its name is stored in the report's custom metadata and it must be
-removed with the report.
+Markdown reports and HTML documents also have a
+`<retention>/<same 32 hex characters>.png` thumbnail. Its name is stored in the
+report's custom metadata and it must be removed with the report. For HTML
+documents the capture is of the document as published, and the `og:image`
+tags are streamed into its `<head>` with `HTMLRewriter` at serve time.
 
 A stored key is never reused, so a published report never changes. That is what
 makes the 24 hour cache safe.

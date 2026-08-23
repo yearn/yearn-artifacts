@@ -4,7 +4,9 @@ Cloudflare Worker that publishes and renders reports
 stored in the `artifacts` R2 bucket.
 
 Markdown is rendered as HTML and published with a 1200×630 social preview
-image. Everything else is served as stored bytes.
+image. HTML documents are served as published, with the same social preview
+captured from the document itself and its tags injected into `<head>`.
+Everything else is served as stored bytes.
 
 ## Architecture
 

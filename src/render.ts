@@ -140,6 +140,19 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
+// Social-preview tags for a report's OG thumbnail. Shared by the rendered markdown layout and
+// the tags injected into published HTML documents.
+export function socialMeta(ogImage: string): string {
+  return ogImage
+    ? `<meta property="og:image" content="${escapeHtml(ogImage)}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${escapeHtml(ogImage)}">`
+    : "";
+}
+
 export type LayoutOptions = {
   header?: string;
   // Extra CSS appended after the shared base/report styles, for callers that need page-specific
@@ -160,14 +173,7 @@ export function layout(
   ogImage = "",
   opts: LayoutOptions = {}
 ): string {
-  const social = ogImage
-    ? `<meta property="og:image" content="${escapeHtml(ogImage)}">
-<meta property="og:image:type" content="image/png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="${escapeHtml(ogImage)}">`
-    : "";
+  const social = socialMeta(ogImage);
   const htmlClass = opts.screenshot ? ' class="dark"' : "";
   // The boot script runs in <head>, before first paint, so the page never flashes the wrong
   // theme. The toggle script runs at the end of <body>, since it needs the footer button to
