@@ -19,6 +19,35 @@ const cacheStore = new Map<string, Response>();
   }
 };
 
+// HTMLRewriter is a Workers runtime API. The handler only uses it to prepend markup into <head>,
+// so a minimal string-based stand-in covers that one call shape under node.
+(globalThis as Record<string, unknown>).HTMLRewriter = class {
+  private handlers: Array<{ selector: string; handler: { element(el: unknown): void } }> = [];
+  on(selector: string, handler: { element(el: unknown): void }) {
+    this.handlers.push({ selector, handler });
+    return this;
+  }
+  transform(response: Response) {
+    const rewritten = response.text().then((body) => {
+      for (const { selector, handler } of this.handlers) {
+        if (selector !== "head") throw new Error(`unsupported selector ${selector}`);
+        handler.element({
+          append(markup: string) {
+            body = body.replace(/<\/head>/i, (tag) => markup + tag);
+          }
+        });
+      }
+      return body;
+    });
+    return new Response(new ReadableStream({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode(await rewritten));
+        controller.close();
+      }
+    }), { status: response.status, headers: response.headers });
+  }
+};
+
 type Stored = { body: string; options?: unknown };
 
 function browser(response = new Response(new Uint8Array([137, 80, 78, 71]), {
@@ -95,6 +124,7 @@ let expirationDate: (
 ) => string;
 let reportRoute: (pathname: string) => { tier: string; key: string } | null;
 let storedKey: (tier: "1d" | "7d" | "30d" | "90d" | "1y" | "archive", key: string) => string;
+let screenshotRejectPattern: (origin: string, withDiagrams: boolean) => string;
 
 before(async () => {
   const module = await import("../src/index.ts");
@@ -110,6 +140,28 @@ before(async () => {
   expirationDate = module.expirationDate;
   reportRoute = module.reportRoute;
   storedKey = module.storedKey;
+  screenshotRejectPattern = module.screenshotRejectPattern;
+});
+
+describe("screenshot request allowlist", () => {
+  const rejects = (pattern: string, url: string) => new RegExp(pattern).test(url);
+
+  it("lets same-origin artifacts through and rejects everything else", () => {
+    const pattern = screenshotRejectPattern("https://x.test", false);
+    assert.equal(rejects(pattern, "https://x.test/abc.png"), false);
+    assert.equal(rejects(pattern, "https://x.test/90d/abc.png"), false);
+    assert.equal(rejects(pattern, "https://x.test.evil/abc.png"), true);
+    assert.equal(rejects(pattern, "https://fonts.gstatic.com/a.woff2"), true);
+    assert.equal(rejects(pattern, "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), true);
+  });
+
+  it("also lets the pinned mermaid dist through when the report has diagrams", () => {
+    const pattern = screenshotRejectPattern("https://x.test", true);
+    assert.equal(rejects(pattern, "https://x.test/abc.png"), false);
+    assert.equal(rejects(pattern, "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), false);
+    assert.equal(rejects(pattern, "https://cdn.jsdelivr.net/npm/mermaid@11.0.0/dist/x.mjs"), true);
+    assert.equal(rejects(pattern, "https://fonts.gstatic.com/a.woff2"), true);
+  });
 });
 
 describe("report expiration", () => {
@@ -165,6 +217,26 @@ describe("DELETE /<key>", () => {
 
     const after = await worker.fetch(new Request(`https://x.test/${KEY}`), target, ctx);
     assert.equal(after.status, 404);
+  });
+
+  it("removes an HTML document together with its thumbnail", async () => {
+    const key = "0123456789abcdef0123456789abcdef.html";
+    const target = { BUCKET: bucket({ [key]: "<html></html>" }), PUBLISH_KEYS: "key-one" };
+    const response = await worker.fetch(
+      new Request(`https://x.test/${key}`, {
+        method: "DELETE",
+        headers: { authorization: "Bearer key-one" }
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(target.BUCKET.deletes, [
+      `30d/${key}`,
+      "30d/0123456789abcdef0123456789abcdef.png",
+      key,
+      "0123456789abcdef0123456789abcdef.png"
+    ]);
   });
 
   // Lifecycle rules never touch archive/, so this route is the only way an
@@ -404,6 +476,40 @@ describe("GET /<key>", () => {
     assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
   });
 
+  it("injects social-preview tags into HTML documents that have a thumbnail", async () => {
+    const key = "0123456789abcdef0123456789abcdef.html";
+    const response = await worker.fetch(
+      new Request(`https://x.test/${key}`),
+      {
+        BUCKET: bucket(
+          { [key]: "<!doctype html><html><head><title>Doc</title></head><body>hi</body></html>" },
+          { [key]: { thumbnail: "0123456789abcdef0123456789abcdef.png" } }
+        )
+      },
+      ctx
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+    const body = await response.text();
+    // Appended after the document's own head content, so its <meta charset> stays early.
+    assert.match(
+      body,
+      /<title>Doc<\/title><meta property="og:image" content="https:\/\/x\.test\/0123456789abcdef0123456789abcdef\.png">/
+    );
+    assert.match(body, /<meta name="twitter:image" content="[^"]*"><\/head>/);
+  });
+
+  it("serves HTML documents without a thumbnail untouched", async () => {
+    const key = "fedcba9876543210fedcba9876543210.html";
+    const source = "<!doctype html><html><head><title>Doc</title></head><body>hi</body></html>";
+    const response = await worker.fetch(
+      new Request(`https://x.test/${key}`),
+      { BUCKET: bucket({ [key]: source }) },
+      ctx
+    );
+    assert.equal(await response.text(), source);
+  });
+
   it("serves HEAD like GET so link checks and monitors work", async () => {
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`, { method: "HEAD" }),
@@ -466,7 +572,12 @@ describe("POST /<key>", () => {
     assert.equal(target.BROWSER.calls.length, 1);
     assert.equal(target.BROWSER.calls[0].action, "screenshot");
     assert.deepEqual(target.BROWSER.calls[0].options.viewport, { width: 1200, height: 630 });
-    assert.deepEqual(target.BROWSER.calls[0].options.rejectRequestPattern, [".*"]);
+    // Same-origin image artifacts are allowed through; nothing else is (no mermaid here).
+    const [reject] = target.BROWSER.calls[0].options.rejectRequestPattern as string[];
+    assert.equal(new RegExp(reject).test("https://x.test/abc.png"), false);
+    assert.equal(new RegExp(reject).test("https://x.test/90d/abc.png"), false);
+    assert.equal(new RegExp(reject).test("https://fonts.gstatic.com/a.woff2"), true);
+    assert.equal(new RegExp(reject).test("https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), true);
     assert.match(
       target.BROWSER.calls[0].options.html as string,
       new RegExp(`property="og:image" content="https://x\\.test/${thumbnail}"`)
@@ -567,6 +678,41 @@ describe("POST /<key>", () => {
     );
     assert.equal(response.status, 502);
     assert.deepEqual(target.BUCKET.puts, {});
+  });
+
+  it("captures a thumbnail of HTML documents as published", async () => {
+    const target = env();
+    const source = "<!doctype html><html><head><title>Doc</title></head><body>hi</body></html>";
+    const response = await worker.fetch(
+      new Request("https://x.test/dashboard.html", {
+        method: "POST",
+        headers: { authorization: "Bearer key-one" },
+        body: source
+      }),
+      target,
+      ctx
+    );
+    assert.equal(response.status, 201);
+    const { key } = (await response.json()) as { key: string };
+    assert.match(key, /^[0-9a-f]{32}\.html$/);
+    const thumbnail = `${key.slice(0, 32)}.png`;
+
+    assert.equal(target.BROWSER.calls.length, 1);
+    // The document itself is what gets captured, not a rendering of it.
+    assert.equal(target.BROWSER.calls[0].options.html, source);
+    assert.equal("waitForSelector" in target.BROWSER.calls[0].options, false);
+    const [reject] = target.BROWSER.calls[0].options.rejectRequestPattern as string[];
+    assert.equal(new RegExp(reject).test("https://x.test/abc.png"), false);
+    assert.equal(new RegExp(reject).test("https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), true);
+
+    assert.equal(target.BUCKET.puts[`30d/${key}`].body, source);
+    const options = target.BUCKET.puts[`30d/${key}`].options as {
+      httpMetadata: { contentType: string };
+      customMetadata: Record<string, string>;
+    };
+    assert.equal(options.httpMetadata.contentType, "text/html; charset=utf-8");
+    assert.equal(options.customMetadata.thumbnail, thumbnail);
+    assert.equal(`30d/${thumbnail}` in target.BUCKET.puts, true);
   });
 
   it("does not invoke the browser for non-markdown files", async () => {

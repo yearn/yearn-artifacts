@@ -42,9 +42,11 @@ The stored R2 object key format is:
 
 The default public URL omits `30d/`, but its stored R2 key includes it.
 
-Markdown reports also have a `<retention>/<same 32 hex characters>.png`
-thumbnail. Its name is stored in the report's custom metadata and it must be
-removed with the report.
+Markdown reports and HTML documents also have a
+`<retention>/<same 32 hex characters>.png` thumbnail. Its name is stored in the
+report's custom metadata and it must be removed with the report. For HTML
+documents the capture is of the document as published, and the `og:image`
+tags are streamed into its `<head>` with `HTMLRewriter` at serve time.
 
 A stored key is never reused, so a published report never changes. That is what
 makes the 24 hour cache safe.
@@ -63,10 +65,12 @@ visual language with yearn-uptime-kuma-status (Aeonik + JetBrains Mono, the
 same oklch light/dark palette, a device/light/dark toggle), reimplemented as
 self-contained CSS in `src/theme.ts` instead of that repo's Tailwind CDN
 script. The report page is also rendered headless to produce each report's OG
-thumbnail (`BROWSER.quickAction` with `rejectRequestPattern: [".*"]`, which
-blocks every network request during the capture) — a runtime CSS framework
-would never generate any styles for that pass, which is why this stays
-hand-written CSS. Only `renderMarkdown`'s `{ screenshot: true }` path skips
+thumbnail (`BROWSER.quickAction` with a `rejectRequestPattern` built by
+`screenshotRejectPattern`, which blocks every network request during the
+capture except same-origin artifacts — so embedded `<img>` infographics
+appear — and, for reports with diagrams, the pinned mermaid dist) — a runtime
+CSS framework would never generate any styles for that pass, which is why this
+stays hand-written CSS. Only `renderMarkdown`'s `{ screenshot: true }` path skips
 the boot/toggle scripts and hardcodes the theme, for a deterministic capture.
 
 The report page carries no Yearn logo: its content comes from repositories we

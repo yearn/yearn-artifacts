@@ -1,6 +1,6 @@
 import { isAuthorized, parseKeys } from "./auth";
 import { renderLandingPage } from "./lander";
-import { hasMermaid, MERMAID_URL, renderMarkdown } from "./render";
+import { hasMermaid, MERMAID_URL, renderMarkdown, socialMeta } from "./render";
 
 export interface Env {
   BUCKET: R2Bucket;
@@ -10,6 +10,7 @@ export interface Env {
 
 const CACHE_CONTROL = "public, max-age=86400";
 const MARKDOWN_TYPE = "text/markdown; charset=utf-8";
+const HTML_TYPE = "text/html; charset=utf-8";
 
 export const RETENTION_TIERS = {
   "1d": 1,
@@ -61,7 +62,7 @@ export function publicPath(tier: RetentionTier, key: string): string {
 
 export function contentTypeForName(name: string): string {
   const lowerName = name.toLowerCase();
-  if (lowerName.endsWith(".html") || lowerName.endsWith(".htm")) return "text/html; charset=utf-8";
+  if (lowerName.endsWith(".html") || lowerName.endsWith(".htm")) return HTML_TYPE;
   if (lowerName.endsWith(".json")) return "application/json; charset=utf-8";
   if (lowerName.endsWith(".sarif")) return "application/sarif+json";
   if (lowerName.endsWith(".md")) return MARKDOWN_TYPE;
@@ -144,16 +145,18 @@ async function handleGet(
   const thumbnailUrl = thumbnail
     ? `${new URL(request.url).origin}${publicPath(route.tier, thumbnail.split("/").at(-1)!)}`
     : "";
-  const response = contentType === MARKDOWN_TYPE
-    ? html(renderMarkdown(
+  let response: Response;
+  if (contentType === MARKDOWN_TYPE) {
+    response = html(renderMarkdown(
       await object.text(),
       route.key,
       object.customMetadata ?? {},
       thumbnailUrl,
       createdDate(object.uploaded),
       expirationDate(object.uploaded, route.tier)
-    ))
-    : new Response(object.body, {
+    ));
+  } else {
+    response = new Response(object.body, {
       headers: {
         "content-type": contentType,
         "cache-control": CACHE_CONTROL,
@@ -161,6 +164,15 @@ async function handleGet(
         etag: object.httpEtag
       }
     });
+    // Published HTML documents are served as-is, apart from the social-preview tags for their
+    // thumbnail, which are streamed into <head> so link unfurls show the capture. Appended, not
+    // prepended: the document's own <meta charset> has to stay within the first 1024 bytes.
+    if (contentType === HTML_TYPE && thumbnailUrl) {
+      response = new HTMLRewriter()
+        .on("head", { element(head) { head.append(socialMeta(thumbnailUrl), { html: true }); } })
+        .transform(response);
+    }
+  }
 
   ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
@@ -177,6 +189,13 @@ export function randomName(extension: string): string {
 
 export function thumbnailName(reportKey: string): string {
   return `${reportKey.slice(0, 32)}.png`;
+}
+
+// Report types that get an OG thumbnail captured at publish time: markdown (rendered by this
+// worker) and HTML documents (captured as published).
+export function hasThumbnail(name: string): boolean {
+  const type = contentTypeForName(name);
+  return type === MARKDOWN_TYPE || type === HTML_TYPE;
 }
 
 // Stored names are random, so listing the bucket says nothing about what a
@@ -198,6 +217,15 @@ export function metadataFromHeaders(
   return metadata;
 }
 
+// Regex for the screenshot pass's rejectRequestPattern: rejects every URL except those under the
+// allowed prefixes (same-origin artifacts, plus the mermaid dist directory when needed).
+export function screenshotRejectPattern(origin: string, withDiagrams: boolean): string {
+  const prefixes = [`${origin}/`];
+  if (withDiagrams) prefixes.push(MERMAID_URL.slice(0, MERMAID_URL.lastIndexOf("/") + 1));
+  const escaped = prefixes.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return `^(?!${escaped.join("|")}).*`;
+}
+
 async function handlePublish(request: Request, env: Env, route: ReportRoute): Promise<Response> {
   if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
     return text("unauthorized", 401);
@@ -210,34 +238,37 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
   const url = new URL(request.url);
   const metadata = metadataFromHeaders(request.headers, route.key);
 
-  if (extension === "md") {
+  if (hasThumbnail(stored)) {
     const source = await request.text();
     const thumbnail = thumbnailName(stored);
     const internalThumbnail = storedKey(route.tier, thumbnail);
     const thumbnailUrl = `${url.origin}${publicPath(route.tier, thumbnail)}`;
     const created = new Date();
-    const rendered = renderMarkdown(
-      source,
-      stored,
-      metadata,
-      thumbnailUrl,
-      createdDate(created),
-      expirationDate(created, route.tier),
-      { screenshot: true }
-    );
-    // The thumbnail page normally makes no requests at all. When the report has mermaid
-    // diagrams, only the pinned mermaid dist path is allowed through (the ESM build
-    // lazy-loads chunks beside the entry file), and the capture waits for the script's
-    // completion marker so diagrams are drawn before the screenshot. The marker is set
-    // even on CDN failure, degrading the thumbnail to code blocks instead of a 502.
-    const withDiagrams = hasMermaid(rendered);
-    const mermaidDist = MERMAID_URL.slice(0, MERMAID_URL.lastIndexOf("/") + 1);
-    const allowMermaid = `^(?!${mermaidDist.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}).*`;
+    // Markdown is rendered to the report page first; HTML documents are captured as published.
+    const page = extension === "md"
+      ? renderMarkdown(
+        source,
+        stored,
+        metadata,
+        thumbnailUrl,
+        createdDate(created),
+        expirationDate(created, route.tier),
+        { screenshot: true }
+      )
+      : source;
+    // The thumbnail page is allowed two kinds of request: images published here (reports embed
+    // their own infographics as <img> artifacts on this origin) and, when the report has mermaid
+    // diagrams, the pinned mermaid dist path (the ESM build lazy-loads chunks beside the entry
+    // file). Everything else is rejected so the capture doesn't depend on third parties. With
+    // diagrams, the capture also waits for the script's completion marker so they are drawn
+    // before the screenshot. The marker is set even on CDN failure, degrading the thumbnail to
+    // code blocks instead of a 502.
+    const withDiagrams = extension === "md" && hasMermaid(page);
     const screenshot = await env.BROWSER.quickAction("screenshot", {
-      html: rendered,
+      html: page,
       viewport: { width: 1200, height: 630 },
       waitForTimeout: 500,
-      rejectRequestPattern: [withDiagrams ? allowMermaid : ".*"],
+      rejectRequestPattern: [screenshotRejectPattern(url.origin, withDiagrams)],
       ...(withDiagrams
         ? { waitForSelector: { selector: "html[data-mermaid-done]", timeout: 10000 } }
         : {}),
@@ -248,7 +279,7 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
     const image = await screenshot.arrayBuffer();
     await Promise.all([
       env.BUCKET.put(internal, source, {
-        httpMetadata: { contentType: MARKDOWN_TYPE, cacheControl: CACHE_CONTROL },
+        httpMetadata: { contentType: contentTypeForName(stored), cacheControl: CACHE_CONTROL },
         customMetadata: { ...metadata, thumbnail }
       }),
       env.BUCKET.put(internalThumbnail, image, {
@@ -278,7 +309,7 @@ async function handleDelete(request: Request, env: Env, route: ReportRoute): Pro
     return text("unauthorized", 401);
   }
 
-  const keys = route.key.endsWith(".md") ? [route.key, thumbnailName(route.key)] : [route.key];
+  const keys = hasThumbnail(route.key) ? [route.key, thumbnailName(route.key)] : [route.key];
   const internalKeys = keys.map((key) => storedKey(route.tier, key));
   const legacyKeys = route.tier === DEFAULT_TIER ? keys : [];
   await Promise.all([...internalKeys, ...legacyKeys].map((key) => env.BUCKET.delete(key)));
