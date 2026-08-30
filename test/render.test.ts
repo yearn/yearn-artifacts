@@ -67,6 +67,7 @@ describe("mermaid diagrams", () => {
     assert.match(page, /securityLevel: "strict"/);
     assert.match(page, /mermaid-reveal/);
     assert.match(page, /mermaid-zoom-guide/);
+    assert.match(page, /\.mermaid-diagram \{ position: relative;[^}]*cursor: zoom-in/);
     assert.match(page, /classList\.toggle\("mermaid-zoomed"\)/);
     assert.match(page, /"zoom out" : "zoom"/);
   });

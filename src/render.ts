@@ -27,7 +27,7 @@ th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: l
 th { background: var(--surface); font-weight: 700; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
-.mermaid-diagram { position: relative; margin: 0 0 1rem; overflow-x: auto; }
+.mermaid-diagram { position: relative; margin: 0 0 1rem; overflow-x: auto; cursor: zoom-in; }
 .mermaid-diagram svg { display: block; margin: 0 auto; max-width: 100%; }
 .mermaid-zoom-guide {
   position: absolute;
