@@ -27,8 +27,49 @@ th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: l
 th { background: var(--surface); font-weight: 700; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 img { max-width: 100%; height: auto; }
-.mermaid-diagram { margin: 0 0 1rem; overflow-x: auto; }
+.mermaid-diagram { position: relative; margin: 0 0 1rem; overflow-x: auto; cursor: zoom-in; }
 .mermaid-diagram svg { display: block; margin: 0 auto; max-width: 100%; }
+.mermaid-zoom-guide {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font: 0.75rem "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  cursor: zoom-in;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.mermaid-diagram:hover .mermaid-zoom-guide,
+.mermaid-diagram:focus-visible .mermaid-zoom-guide,
+.mermaid-diagram.mermaid-zoomed .mermaid-zoom-guide { opacity: 1; }
+.mermaid-diagram:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.mermaid-diagram.mermaid-zoomed {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  margin: 0;
+  padding: 2rem;
+  background: var(--bg);
+  overflow: auto;
+  cursor: zoom-out;
+}
+.mermaid-diagram.mermaid-zoomed svg {
+  width: calc(100vw - 4rem) !important;
+  height: auto !important;
+  max-width: none !important;
+  margin: auto;
+}
+.mermaid-diagram.mermaid-zoomed .mermaid-zoom-guide {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (hover: none) {
+  .mermaid-zoom-guide { opacity: 1; }
+}
 /* Mermaid fences hold layout space invisibly until the script replaces them with a
    diagram, so the page never flashes a wall of diagram source. The animation is the
    no-JS / unreachable-CDN fallback: the source reveals itself after a beat with no
@@ -81,7 +122,23 @@ if (blocks.length) try {
     const pre = code.parentElement;
     const holder = document.createElement("div");
     holder.className = "mermaid-diagram";
+    holder.tabIndex = 0;
+    holder.setAttribute("role", "button");
+    holder.setAttribute("aria-label", "Zoom Mermaid diagram");
     pre.insertAdjacentElement("beforebegin", holder);
+    function toggleZoom() {
+      if (!holder.querySelector("svg")) return;
+      const zoomed = holder.classList.toggle("mermaid-zoomed");
+      holder.setAttribute("aria-expanded", String(zoomed));
+      holder.setAttribute("aria-label", zoomed ? "Zoom out Mermaid diagram" : "Zoom Mermaid diagram");
+      document.body.style.overflow = zoomed ? "hidden" : "";
+    }
+    holder.addEventListener("click", toggleZoom);
+    holder.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleZoom();
+    });
     return { source: code.textContent, holder, pre };
   });
   let pass = 0;
@@ -100,7 +157,8 @@ if (blocks.length) try {
     for (const [i, d] of diagrams.entries()) {
       try {
         const { svg } = await mermaid.render("mermaid-" + pass + "-" + i, d.source);
-        d.holder.innerHTML = svg;
+        d.holder.innerHTML = svg + '<span class="mermaid-zoom-guide" aria-hidden="true">' +
+          (d.holder.classList.contains("mermaid-zoomed") ? "zoom out" : "zoom") + "</span>";
         d.pre.hidden = true;
       } catch {
         d.holder.replaceChildren();

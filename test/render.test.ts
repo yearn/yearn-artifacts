@@ -66,6 +66,13 @@ describe("mermaid diagrams", () => {
     assert.ok(page.includes("cdn.jsdelivr.net/npm/mermaid@"));
     assert.match(page, /securityLevel: "strict"/);
     assert.match(page, /mermaid-reveal/);
+    assert.match(page, /mermaid-zoom-guide/);
+    assert.match(page, /\.mermaid-diagram \{ position: relative;[^}]*cursor: zoom-in/);
+    assert.match(page, /classList\.toggle\("mermaid-zoomed"\)/);
+    assert.match(page, /width: calc\(100vw - 4rem\) !important/);
+    assert.match(page, /height: auto !important/);
+    assert.match(page, /mermaid-zoomed \.mermaid-zoom-guide \{\s*opacity: 0;\s*pointer-events: none;/);
+    assert.match(page, /"zoom out" : "zoom"/);
   });
 
   it("omits the mermaid script when a report has no mermaid fence", () => {
