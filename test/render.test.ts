@@ -71,6 +71,7 @@ describe("mermaid diagrams", () => {
     assert.match(page, /classList\.toggle\("mermaid-zoomed"\)/);
     assert.match(page, /width: calc\(100vw - 4rem\) !important/);
     assert.match(page, /height: auto !important/);
+    assert.match(page, /mermaid-zoomed \.mermaid-zoom-guide \{\s*opacity: 0;\s*pointer-events: none;/);
     assert.match(page, /"zoom out" : "zoom"/);
   });
 

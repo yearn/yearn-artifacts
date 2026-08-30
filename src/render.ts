@@ -63,7 +63,10 @@ img { max-width: 100%; height: auto; }
   max-width: none !important;
   margin: auto;
 }
-.mermaid-diagram.mermaid-zoomed .mermaid-zoom-guide { cursor: zoom-out; }
+.mermaid-diagram.mermaid-zoomed .mermaid-zoom-guide {
+  opacity: 0;
+  pointer-events: none;
+}
 @media (hover: none) {
   .mermaid-zoom-guide { opacity: 1; }
 }
