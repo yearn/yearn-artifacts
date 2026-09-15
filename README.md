@@ -117,6 +117,16 @@ Set one or more publish keys, comma-separated:
 pnpm exec wrangler secret put PUBLISH_KEYS
 ```
 
+Each key is `[client]--[64 hex characters]`, one per publisher so each can be
+revoked on its own. Generate one with:
+
+```bash
+echo "[client]--$(openssl rand -hex 32)"
+```
+
+`secret put` replaces the whole list and the current value cannot be read back,
+so when adding a key, enter every existing key along with the new one.
+
 Deploy:
 
 ```bash
