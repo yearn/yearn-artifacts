@@ -286,13 +286,17 @@ describe("provenance metadata", () => {
       "x-report-repository": "yearn/section9",
       "x-report-scanner": "socket",
       "x-report-ref": "main",
-      "x-report-commit": "a1b2c3d"
+      "x-report-commit": "a1b2c3d",
+      "x-report-model": "claude-opus-5",
+      "x-report-effort": "high"
     });
     assert.deepEqual(metadataFromHeaders(headers, "REPORT.md"), {
       repository: "yearn/section9",
       scanner: "socket",
       ref: "main",
       commit: "a1b2c3d",
+      model: "claude-opus-5",
+      effort: "high",
       name: "REPORT.md"
     });
   });

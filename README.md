@@ -117,6 +117,16 @@ Set one or more publish keys, comma-separated:
 pnpm exec wrangler secret put PUBLISH_KEYS
 ```
 
+Each key is `[client]--[64 hex characters]`, one per publisher so each can be
+revoked on its own. Generate one with:
+
+```bash
+echo "[client]--$(openssl rand -hex 32)"
+```
+
+`secret put` replaces the whole list and the current value cannot be read back,
+so when adding a key, enter every existing key along with the new one.
+
 Deploy:
 
 ```bash
@@ -152,6 +162,8 @@ curl -X POST "$ARTIFACTS_URL/REPORT.md" \
   -H "X-Report-Scanner: socket" \
   -H "X-Report-Ref: main" \
   -H "X-Report-Commit: $GITHUB_SHA" \
+  -H "X-Report-Model: claude-opus-5" \
+  -H "X-Report-Effort: high" \
   -H "X-Report-Confidential: true" \
   --data-binary @REPORT.md
 ```
@@ -194,12 +206,15 @@ Stored names are random, so listing the bucket says nothing about what a report
 is. The optional `X-Report-*` headers are stored as R2 custom metadata:
 
 ```text
-repository  scanner  ref  commit  name  confidential
+repository  scanner  ref  commit  model  effort  name  confidential
 ```
 
 `name` defaults to the posted file name. Values are trimmed to 512 characters,
 and unknown `X-Report-*` headers are ignored. The rendered report shows this
 line in its footer, falling back to the stored name when no metadata was sent.
+`model` and `effort` record the model that wrote the report and its reasoning
+effort; the footer lists them under the provenance line and shows `unknown` for
+either one that was not sent.
 When `confidential` is exactly `true`, rendered Markdown and its social preview
 show a `Yearn Confidential — Do Not Distribute` notice. Unset, `false`, and
 other values do not show the notice. This is a visual label, not access control.

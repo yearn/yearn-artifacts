@@ -31,8 +31,25 @@ describe("markdown rendering", () => {
   it("shows expiration in the footer", () => {
     const page = renderMarkdown("hi\n", "abc.md", {}, "", "2026-08-09", "2026-09-08");
     assert.match(page, /<div>Provenance: abc\.md<\/div>/);
+    assert.match(page, /<div>Model: unknown<\/div>/);
+    assert.match(page, /<div>Effort: unknown<\/div>/);
     assert.match(page, /<div>Created: 2026-08-09<\/div>/);
     assert.match(page, /<div>Expires: 2026-09-08<\/div>/);
+  });
+
+  it("lists model and effort directly under provenance", () => {
+    const page = renderMarkdown(
+      "hi\n",
+      "abc.md",
+      { scanner: "socket", model: "claude-opus-5", effort: "<high>" },
+      "",
+      "2026-08-09",
+      "2026-09-08"
+    );
+    assert.match(
+      page,
+      /<div>Provenance: socket<\/div>\n<div>Model: claude-opus-5<\/div>\n<div>Effort: &lt;high&gt;<\/div>\n<div>Created: /
+    );
   });
 
   it("shows the confidentiality notice at the head and foot when marked confidential", () => {
