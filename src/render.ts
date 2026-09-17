@@ -280,6 +280,8 @@ export function reportFooter(
   expires = ""
 ): string {
   return `<div>Provenance: ${provenanceLine(key, metadata)}</div>
+<div>Model: ${escapeHtml(metadata.model || "unknown")}</div>
+<div>Effort: ${escapeHtml(metadata.effort || "unknown")}</div>
 <div>Created: ${escapeHtml(created)}</div>
 <div>Expires: ${escapeHtml(expires)}</div>`;
 }

@@ -103,6 +103,8 @@ ${codeBlock("publish", `curl -X POST ${baseUrl}/REPORT.md \\
   -H "X-Report-Scanner: socket" \\
   -H "X-Report-Ref: main" \\
   -H "X-Report-Commit: $GITHUB_SHA" \\
+  -H "X-Report-Model: claude-opus-5" \\
+  -H "X-Report-Effort: high" \\
   -H "X-Report-Confidential: true" \\
   --data-binary @REPORT.md`)}
 <p>The optional <code>X-Report-*</code> headers are stored as object metadata and
