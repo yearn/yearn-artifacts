@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderLandingPage } from "../src/lander.ts";
-import { escapeHtml, headingOf, pageTitle, renderMarkdown } from "../src/render.ts";
+import { escapeHtml, headingOf, modelLine, pageTitle, renderMarkdown } from "../src/render.ts";
 
 describe("html escaping", () => {
   it("escapes the characters that break out of markup", () => {
@@ -32,9 +32,17 @@ describe("markdown rendering", () => {
     const page = renderMarkdown("hi\n", "abc.md", {}, "", "2026-08-09", "2026-09-08");
     assert.match(page, /<div>Provenance: abc\.md<\/div>/);
     assert.match(page, /<div>Model: unknown<\/div>/);
-    assert.match(page, /<div>Effort: unknown<\/div>/);
+    assert.doesNotMatch(page, /Effort:/);
     assert.match(page, /<div>Created: 2026-08-09<\/div>/);
     assert.match(page, /<div>Expires: 2026-09-08<\/div>/);
+  });
+
+  it("shows effort in parens after the model only when sent", () => {
+    assert.equal(modelLine({ model: "claude-opus-5", effort: "high" }), "claude-opus-5 (high)");
+    assert.equal(modelLine({ model: "claude-opus-5" }), "claude-opus-5");
+    assert.equal(modelLine({}), "unknown");
+    assert.equal(modelLine({ effort: "high" }), "unknown (high)");
+    assert.equal(modelLine({ model: "<m>", effort: "<e>" }), "&lt;m&gt; (&lt;e&gt;)");
   });
 
   it("lists model and effort directly under provenance", () => {
@@ -48,7 +56,7 @@ describe("markdown rendering", () => {
     );
     assert.match(
       page,
-      /<div>Provenance: socket<\/div>\n<div>Model: claude-opus-5<\/div>\n<div>Effort: &lt;high&gt;<\/div>\n<div>Created: /
+      /<div>Provenance: socket<\/div>\n<div>Model: claude-opus-5 \(&lt;high&gt;\)<\/div>\n<div>Created: /
     );
   });
 
