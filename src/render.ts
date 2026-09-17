@@ -273,6 +273,13 @@ export function provenanceLine(key: string, metadata: Record<string, string> = {
   return parts.length ? parts.join(" &middot; ") : escapeHtml(key);
 }
 
+// Effort qualifies the model, so it rides in parens and is left out entirely
+// when the publisher did not send it.
+export function modelLine(metadata: Record<string, string> = {}): string {
+  const model = escapeHtml(metadata.model || "unknown");
+  return metadata.effort ? `${model} (${escapeHtml(metadata.effort)})` : model;
+}
+
 export function reportFooter(
   key: string,
   metadata: Record<string, string> = {},
@@ -280,8 +287,7 @@ export function reportFooter(
   expires = ""
 ): string {
   return `<div>Provenance: ${provenanceLine(key, metadata)}</div>
-<div>Model: ${escapeHtml(metadata.model || "unknown")}</div>
-<div>Effort: ${escapeHtml(metadata.effort || "unknown")}</div>
+<div>Model: ${modelLine(metadata)}</div>
 <div>Created: ${escapeHtml(created)}</div>
 <div>Expires: ${escapeHtml(expires)}</div>`;
 }

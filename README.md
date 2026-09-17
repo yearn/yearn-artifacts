@@ -213,8 +213,8 @@ repository  scanner  ref  commit  model  effort  name  confidential
 and unknown `X-Report-*` headers are ignored. The rendered report shows this
 line in its footer, falling back to the stored name when no metadata was sent.
 `model` and `effort` record the model that wrote the report and its reasoning
-effort; the footer lists them under the provenance line and shows `unknown` for
-either one that was not sent.
+effort; the footer shows them under the provenance line as `model (effort)`.
+A missing model shows as `unknown`, and a missing effort drops the parentheses.
 When `confidential` is exactly `true`, rendered Markdown and its social preview
 show a `Yearn Confidential — Do Not Distribute` notice. Unset, `false`, and
 other values do not show the notice. This is a visual label, not access control.
