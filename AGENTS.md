@@ -40,7 +40,10 @@ The stored R2 object key format is:
 <retention>/<32 hex characters>.<ext>
 ```
 
-The default public URL omits `30d/`, but its stored R2 key includes it.
+New reports default to `archive/`; their public URLs omit that prefix.
+Unprefixed reads fall back to `30d/` only. Explicit tier URLs never fall back.
+Unprefixed DELETE removes both tiers and their thumbnails; DELETE must evict
+all affected URL aliases. Bucket-root objects are no longer supported.
 
 Markdown reports and HTML documents also have a
 `<retention>/<same 32 hex characters>.png` thumbnail. Its name is stored in the

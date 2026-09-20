@@ -33,7 +33,9 @@ and a random name:
 <retention>/<32 hex characters>.<ext>
 ```
 
-The default public URL omits its internal `30d/` prefix.
+The default public URL omits its internal `archive/` prefix. Unprefixed reads
+check `archive/` first, then `30d/` for existing links. Explicit tier URLs read
+only that tier. Existing reports keep their original retention.
 
 ## Endpoints
 
@@ -75,15 +77,16 @@ state, pie, xychart, git graph, timeline, quadrant, and mindmap:
 
 ## Retention
 
-Reports expire 30 days after publish by default. A path prefix selects another
-retention tier:
+Reports have no automatic expiration by default (archive). A path prefix selects
+an expiration when publishing:
 
 ```text
 /1d/<name>        1 day
 /7d/<name>        7 days
-/<name>           30 days (default)
+/30d/<name>       30 days
 /90d/<name>       90 days
 /1y/<name>        1 year
+/<name>           no automatic expiration (default)
 /archive/<name>   no automatic expiration
 ```
 
@@ -132,25 +135,6 @@ Deploy:
 ```bash
 pnpm deploy
 ```
-
-### One-time retention migration
-
-The retention-tier rollout moves reports published before tier prefixes were
-introduced from the bucket root into `30d/`. Deploy the tier-aware Worker, run
-the authenticated migration, then install the prefix lifecycle configuration:
-
-```bash
-pnpm deploy
-pnpm migrate
-pnpm provision
-```
-
-`pnpm migrate` uses `ARTIFACTS_URL` and `ARTIFACTS_API_KEY`, processes root
-objects in bounded pages, and reports counts without exposing object names.
-Existing public report URLs do not change. Copying resets the R2 upload date,
-so migrated reports receive 30 days from migration. Once migration is verified,
-remove the temporary migration route and legacy root-key fallback from
-`src/index.ts`, along with this script.
 
 ## Publish a Report
 

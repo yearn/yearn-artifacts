@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { before, describe, it } from "node:test";
+import { before, beforeEach, describe, it } from "node:test";
 
 // caches.default and R2 are ambient in the Workers runtime. Stub them before
 // importing the handler so the routing logic can be exercised under node.
@@ -96,14 +96,11 @@ function bucket(
       deletes.push(key);
       delete objects[key];
     },
-    async list(options: { cursor?: string; delimiter?: string; limit?: number } = {}) {
-      const rootObjects = Object.keys(objects)
-        .filter((key) => !options.delimiter || !key.includes(options.delimiter))
-        .map((key) => ({ key }));
-      return { objects: rootObjects, truncated: false };
-    }
+
   };
 }
+
+beforeEach(() => cacheStore.clear());
 
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 
@@ -165,15 +162,16 @@ describe("screenshot request allowlist", () => {
 });
 
 describe("report expiration", () => {
-  it("formats the upload date plus 30 days", () => {
+  it("defaults to no expiration", () => {
     assert.equal(createdDate(new Date("2026-08-09T12:00:00Z")), "2026-08-09");
-    assert.equal(expirationDate(new Date("2026-08-09T12:00:00Z")), "2026-09-08");
+    assert.equal(expirationDate(new Date("2026-08-09T12:00:00Z")), "Never");
   });
 
   it("formats each tier and leaves archive reports without an expiry", () => {
     const uploaded = new Date("2026-08-09T12:00:00Z");
     assert.equal(expirationDate(uploaded, "1d"), "2026-08-10");
     assert.equal(expirationDate(uploaded, "7d"), "2026-08-16");
+    assert.equal(expirationDate(uploaded, "30d"), "2026-09-08");
     assert.equal(expirationDate(uploaded, "90d"), "2026-11-07");
     assert.equal(expirationDate(uploaded, "1y"), "2027-08-09");
     assert.equal(expirationDate(uploaded, "archive"), "Never");
@@ -191,7 +189,7 @@ describe("cache key", () => {
 });
 
 describe("DELETE /<key>", () => {
-  const env = () => ({ BUCKET: bucket({ [KEY]: "# Findings\n" }), PUBLISH_KEYS: "key-one" });
+  const env = () => ({ BUCKET: bucket({ [`30d/${KEY}`]: "# Findings\n" }), PUBLISH_KEYS: "key-one" });
 
   it("removes the object and its cached copy", async () => {
     const target = env();
@@ -209,10 +207,10 @@ describe("DELETE /<key>", () => {
     );
     assert.equal(response.status, 200);
     assert.deepEqual(target.BUCKET.deletes, [
+      `archive/${KEY}`,
+      "archive/0123456789abcdef0123456789abcdef.png",
       `30d/${KEY}`,
-      "30d/0123456789abcdef0123456789abcdef.png",
-      KEY,
-      "0123456789abcdef0123456789abcdef.png"
+      "30d/0123456789abcdef0123456789abcdef.png"
     ]);
 
     const after = await worker.fetch(new Request(`https://x.test/${KEY}`), target, ctx);
@@ -221,7 +219,7 @@ describe("DELETE /<key>", () => {
 
   it("removes an HTML document together with its thumbnail", async () => {
     const key = "0123456789abcdef0123456789abcdef.html";
-    const target = { BUCKET: bucket({ [key]: "<html></html>" }), PUBLISH_KEYS: "key-one" };
+    const target = { BUCKET: bucket({ [`30d/${key}`]: "<html></html>" }), PUBLISH_KEYS: "key-one" };
     const response = await worker.fetch(
       new Request(`https://x.test/${key}`, {
         method: "DELETE",
@@ -232,10 +230,10 @@ describe("DELETE /<key>", () => {
     );
     assert.equal(response.status, 200);
     assert.deepEqual(target.BUCKET.deletes, [
+      `archive/${key}`,
+      "archive/0123456789abcdef0123456789abcdef.png",
       `30d/${key}`,
-      "30d/0123456789abcdef0123456789abcdef.png",
-      key,
-      "0123456789abcdef0123456789abcdef.png"
+      "30d/0123456789abcdef0123456789abcdef.png"
     ]);
   });
 
@@ -355,11 +353,11 @@ describe("key handling", () => {
     assert.equal(contentTypeForName("a.bin"), "application/octet-stream");
   });
 
-  it("maps root paths to 30 days and recognizes explicit tiers", () => {
-    assert.deepEqual(reportRoute(`/${KEY}`), { tier: "30d", key: KEY });
+  it("maps root paths to archive and recognizes explicit tiers", () => {
+    assert.deepEqual(reportRoute(`/${KEY}`), { tier: "archive", key: KEY });
     assert.deepEqual(reportRoute(`/7d/${KEY}`), { tier: "7d", key: KEY });
     assert.deepEqual(reportRoute(`/archive/${KEY}`), { tier: "archive", key: KEY });
-    assert.equal(reportRoute(`/30d/${KEY}`), null);
+    assert.deepEqual(reportRoute(`/30d/${KEY}`), { tier: "30d", key: KEY });
     assert.equal(reportRoute(`/unknown/${KEY}`), null);
     assert.equal(reportRoute(`/7d/nested/${KEY}`), null);
     // Inherited object-prototype names must not read as tiers: a report stored
@@ -388,47 +386,14 @@ describe("GET /", () => {
   });
 });
 
-describe("POST /_migrate-retention-prefixes", () => {
-  it("moves legacy root reports without exposing their names", async () => {
-    const target = {
-      BUCKET: bucket({ [KEY]: "# Findings\n" }),
-      PUBLISH_KEYS: "key-one"
-    };
-    const response = await worker.fetch(
-      new Request("https://x.test/_migrate-retention-prefixes", {
-        method: "POST",
-        headers: { authorization: "Bearer key-one" }
-      }),
-      target,
-      ctx
-    );
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { migrated: 1, done: true });
-    assert.equal(target.BUCKET.puts[`30d/${KEY}`].body, "# Findings\n");
-    assert.deepEqual(target.BUCKET.deletes, [KEY]);
-  });
-
-  it("requires publisher authentication", async () => {
-    const target = { BUCKET: bucket({ [KEY]: "# Findings\n" }), PUBLISH_KEYS: "key-one" };
-    const response = await worker.fetch(
-      new Request("https://x.test/_migrate-retention-prefixes", { method: "POST" }),
-      target,
-      ctx
-    );
-    assert.equal(response.status, 401);
-    assert.deepEqual(target.BUCKET.puts, {});
-    assert.deepEqual(target.BUCKET.deletes, []);
-  });
-});
-
 describe("GET /<key>", () => {
   it("shows provenance in the footer instead of the random name", async () => {
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`),
       {
         BUCKET: bucket(
-          { [KEY]: "# Findings\n" },
-          { [KEY]: { repository: "yearn/section9", scanner: "socket", commit: "a1b2c3d" } }
+          { [`30d/${KEY}`]: "# Findings\n" },
+          { [`30d/${KEY}`]: { repository: "yearn/section9", scanner: "socket", commit: "a1b2c3d" } }
         )
       },
       ctx
@@ -443,7 +408,7 @@ describe("GET /<key>", () => {
     cacheStore.clear();
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`),
-      { BUCKET: bucket({ [KEY]: "# Findings\n" }) },
+      { BUCKET: bucket({ [`30d/${KEY}`]: "# Findings\n" }) },
       ctx
     );
     assert.equal(response.status, 200);
@@ -461,12 +426,12 @@ describe("GET /<key>", () => {
     const thumbnail = "0123456789abcdef0123456789abcdef.png";
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`),
-      { BUCKET: bucket({ [KEY]: "# Findings\n" }, { [KEY]: { thumbnail } }) },
+      { BUCKET: bucket({ [`30d/${KEY}`]: "# Findings\n" }, { [`30d/${KEY}`]: { thumbnail } }) },
       ctx
     );
     assert.match(
       await response.text(),
-      /property="og:image" content="https:\/\/x\.test\/0123456789abcdef0123456789abcdef\.png"/
+      /property="og:image" content="https:\/\/x\.test\/30d\/0123456789abcdef0123456789abcdef\.png"/
     );
   });
 
@@ -474,7 +439,7 @@ describe("GET /<key>", () => {
     const key = "0123456789abcdef0123456789abcdef.json";
     const response = await worker.fetch(
       new Request(`https://x.test/${key}`),
-      { BUCKET: bucket({ [key]: '{"ok":true}' }) },
+      { BUCKET: bucket({ [`30d/${key}`]: '{"ok":true}' }) },
       ctx
     );
     assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
@@ -486,8 +451,8 @@ describe("GET /<key>", () => {
       new Request(`https://x.test/${key}`),
       {
         BUCKET: bucket(
-          { [key]: "<!doctype html><html><head><title>Doc</title></head><body>hi</body></html>" },
-          { [key]: { thumbnail: "0123456789abcdef0123456789abcdef.png" } }
+          { [`30d/${key}`]: "<!doctype html><html><head><title>Doc</title></head><body>hi</body></html>" },
+          { [`30d/${key}`]: { thumbnail: "0123456789abcdef0123456789abcdef.png" } }
         )
       },
       ctx
@@ -498,7 +463,7 @@ describe("GET /<key>", () => {
     // Appended after the document's own head content, so its <meta charset> stays early.
     assert.match(
       body,
-      /<title>Doc<\/title><meta property="og:image" content="https:\/\/x\.test\/0123456789abcdef0123456789abcdef\.png">/
+      /<title>Doc<\/title><meta property="og:image" content="https:\/\/x\.test\/30d\/0123456789abcdef0123456789abcdef\.png">/
     );
     assert.match(body, /<meta name="twitter:image" content="[^"]*"><\/head>/);
   });
@@ -508,7 +473,7 @@ describe("GET /<key>", () => {
     const source = "<!doctype html><html><head><title>Doc</title></head><body>hi</body></html>";
     const response = await worker.fetch(
       new Request(`https://x.test/${key}`),
-      { BUCKET: bucket({ [key]: source }) },
+      { BUCKET: bucket({ [`30d/${key}`]: source }) },
       ctx
     );
     assert.equal(await response.text(), source);
@@ -517,7 +482,7 @@ describe("GET /<key>", () => {
   it("serves HEAD like GET so link checks and monitors work", async () => {
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`, { method: "HEAD" }),
-      { BUCKET: bucket({ [KEY]: "# Findings\n" }) },
+      { BUCKET: bucket({ [`30d/${KEY}`]: "# Findings\n" }) },
       ctx
     );
     assert.equal(response.status, 200);
@@ -568,9 +533,9 @@ describe("POST /<key>", () => {
     // The posted name is public information, so it must not become the key.
     assert.match(body.key, /^[0-9a-f]{32}\.md$/);
     assert.equal(body.url, `https://x.test/${body.key}`);
-    assert.equal(target.BUCKET.puts[`30d/${body.key}`].body, "# Findings\n");
+    assert.equal(target.BUCKET.puts[`archive/${body.key}`].body, "# Findings\n");
     const thumbnail = `${body.key.slice(0, 32)}.png`;
-    assert.equal(`30d/${thumbnail}` in target.BUCKET.puts, true);
+    assert.equal(`archive/${thumbnail}` in target.BUCKET.puts, true);
     assert.equal(POST_NAME in target.BUCKET.puts, false);
 
     assert.equal(target.BROWSER.calls.length, 1);
@@ -605,7 +570,7 @@ describe("POST /<key>", () => {
       ctx
     );
     const { key } = (await response.json()) as { key: string };
-    const options = target.BUCKET.puts[`30d/${key}`].options as {
+    const options = target.BUCKET.puts[`archive/${key}`].options as {
       customMetadata: Record<string, string>
     };
     assert.deepEqual(options.customMetadata, {
@@ -709,14 +674,14 @@ describe("POST /<key>", () => {
     assert.equal(new RegExp(reject).test("https://x.test/abc.png"), false);
     assert.equal(new RegExp(reject).test("https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/x.mjs"), true);
 
-    assert.equal(target.BUCKET.puts[`30d/${key}`].body, source);
-    const options = target.BUCKET.puts[`30d/${key}`].options as {
+    assert.equal(target.BUCKET.puts[`archive/${key}`].body, source);
+    const options = target.BUCKET.puts[`archive/${key}`].options as {
       httpMetadata: { contentType: string };
       customMetadata: Record<string, string>;
     };
     assert.equal(options.httpMetadata.contentType, "text/html; charset=utf-8");
     assert.equal(options.customMetadata.thumbnail, thumbnail);
-    assert.equal(`30d/${thumbnail}` in target.BUCKET.puts, true);
+    assert.equal(`archive/${thumbnail}` in target.BUCKET.puts, true);
   });
 
   it("does not invoke the browser for non-markdown files", async () => {
@@ -803,4 +768,89 @@ describe("POST /<key>", () => {
       assert.deepEqual(target.BUCKET.puts, {});
     }
   });
+});
+
+
+describe("archive default and 30d compatibility", () => {
+  const thumbnail = "0123456789abcdef0123456789abcdef.png";
+
+  it("prefers archive and takes expiration and thumbnail from the matched tier", async () => {
+    const target = { BUCKET: bucket({
+      [`archive/${KEY}`]: "# Archived",
+      [`30d/${KEY}`]: "# Expiring"
+    }, { [`archive/${KEY}`]: { thumbnail } }) };
+    const response = await worker.fetch(new Request(`https://x.test/${KEY}`), target, ctx);
+    const page = await response.text();
+    assert.match(page, /<h1>Archived<\/h1>/);
+    assert.match(page, /Expires: Never/);
+    assert.ok(page.includes(`https://x.test/archive/${thumbnail}`));
+  });
+
+  it("falls back for HEAD and thumbnail reads but never for explicit tiers or bucket-root objects", async () => {
+    const target = { BUCKET: bucket({
+      [`30d/${KEY}`]: "# Expiring",
+      [`30d/${thumbnail}`]: "image",
+      [KEY.replace("0123", "abcd")]: "# Unsupported root object"
+    }) };
+    const head = await worker.fetch(new Request(`https://x.test/${KEY}`, { method: "HEAD" }), target, ctx);
+    assert.equal(head.status, 200);
+    assert.match(await head.text(), /Expires: 2026-09-08/);
+    const image = await worker.fetch(new Request(`https://x.test/${thumbnail}`), target, ctx);
+    assert.equal(await image.text(), "image");
+    for (const path of [`archive/${KEY}`, `7d/${KEY}`, KEY.replace("0123", "abcd")]) {
+      const missing = await worker.fetch(new Request(`https://x.test/${path}`), target, ctx);
+      assert.equal(missing.status, 404);
+    }
+  });
+
+  for (const tier of ["archive", "30d"] as const) {
+    for (const deletePrefix of ["", `${tier}/`]) {
+      it(`deleting ${deletePrefix || "unprefixed "}evicts ${tier} report and thumbnail aliases`, async () => {
+        const target = {
+          BUCKET: bucket({ [`${tier}/${KEY}`]: "# Report", [`${tier}/${thumbnail}`]: "image" }),
+          PUBLISH_KEYS: "key-one"
+        };
+        const paths = [KEY, thumbnail, `${tier}/${KEY}`, `${tier}/${thumbnail}`];
+        for (const path of paths) {
+          assert.equal((await worker.fetch(new Request(`https://x.test/${path}`), target, ctx)).status, 200);
+        }
+        const removed = await worker.fetch(new Request(`https://x.test/${deletePrefix}${KEY}`, {
+          method: "DELETE", headers: { authorization: "Bearer key-one" }
+        }), target, ctx);
+        assert.equal(removed.status, 200);
+        for (const path of paths) {
+          assert.equal((await worker.fetch(new Request(`https://x.test/${path}`), target, ctx)).status, 404);
+        }
+      });
+    }
+  }
+
+  it("unprefixed deletion removes both tiers so a fallback cannot reappear", async () => {
+    const target = {
+      BUCKET: bucket({ [`archive/${KEY}`]: "# Archive", [`30d/${KEY}`]: "# Older" }),
+      PUBLISH_KEYS: "key-one"
+    };
+    for (const path of [KEY, `archive/${KEY}`, `30d/${KEY}`]) {
+      await worker.fetch(new Request(`https://x.test/${path}`), target, ctx);
+    }
+    await worker.fetch(new Request(`https://x.test/${KEY}`, {
+      method: "DELETE", headers: { authorization: "Bearer key-one" }
+    }), target, ctx);
+    for (const path of [KEY, `archive/${KEY}`, `30d/${KEY}`]) {
+      assert.equal((await worker.fetch(new Request(`https://x.test/${path}`), target, ctx)).status, 404);
+    }
+  });
+
+  for (const tier of ["archive", "30d"]) {
+    it(`publishes explicitly to ${tier}`, async () => {
+      const target = { BUCKET: bucket(), PUBLISH_KEYS: "key-one" };
+      const response = await worker.fetch(new Request(`https://x.test/${tier}/report.txt`, {
+        method: "POST", headers: { authorization: "Bearer key-one" }, body: "report"
+      }), target, ctx);
+      assert.equal(response.status, 201);
+      const { key, url } = await response.json() as { key: string; url: string };
+      assert.equal(target.BUCKET.puts[`${tier}/${key}`].body, "report");
+      assert.equal(url, `https://x.test/${tier === "archive" ? "" : "30d/"}${key}`);
+    });
+  }
 });

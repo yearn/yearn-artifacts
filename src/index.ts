@@ -22,7 +22,7 @@ export const RETENTION_TIERS = {
 } as const;
 
 export type RetentionTier = keyof typeof RETENTION_TIERS;
-export const DEFAULT_TIER: RetentionTier = "30d";
+export const DEFAULT_TIER: RetentionTier = "archive";
 
 export function createdDate(uploaded: Date): string {
   return uploaded.toISOString().slice(0, 10);
@@ -44,7 +44,6 @@ export function reportRoute(pathname: string): ReportRoute | null {
   if (
     parts.length !== 2
     || !parts[1]
-    || parts[0] === DEFAULT_TIER
     // Object.hasOwn, not `in`: inherited names like "toString" must not pass
     // as tiers, or a report lands under a prefix no lifecycle rule deletes.
     || !Object.hasOwn(RETENTION_TIERS, parts[0])
@@ -112,7 +111,7 @@ function html(body: string, status = 200): Response {
 // entries are scoped to this value so a rendering change takes effect on
 // existing reports instead of waiting out the day-long TTL. Bump it whenever
 // the rendered output changes.
-const RENDER_VERSION = "22";
+const RENDER_VERSION = "23";
 
 // The Cache API rejects non-GET keys, so HEAD and GET share one normalized
 // entry rather than HEAD throwing inside waitUntil.
@@ -120,6 +119,10 @@ export function cacheKeyFor(url: string): Request {
   const keyUrl = new URL(url);
   keyUrl.searchParams.set("v", RENDER_VERSION);
   return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function isUnprefixed(request: Request): boolean {
+  return !keyFromPathname(new URL(request.url).pathname).includes("/");
 }
 
 async function handleGet(
@@ -133,17 +136,19 @@ async function handleGet(
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const internalKey = storedKey(route.tier, route.key);
-  // Temporary compatibility for reports published before retention prefixes
-  // were introduced. Remove after the one-time migration has been verified.
-  const object = await env.BUCKET.get(internalKey)
-    ?? (route.tier === DEFAULT_TIER ? await env.BUCKET.get(route.key) : null);
+  let tier = route.tier;
+  let object = await env.BUCKET.get(storedKey(tier, route.key));
+  // Unprefixed links issued before archive became the default still address 30d objects.
+  if (!object && isUnprefixed(request)) {
+    tier = "30d";
+    object = await env.BUCKET.get(storedKey(tier, route.key));
+  }
   if (!object) return text("not found", 404);
 
   const contentType = contentTypeForName(route.key);
   const thumbnail = object.customMetadata?.thumbnail;
   const thumbnailUrl = thumbnail
-    ? `${new URL(request.url).origin}${publicPath(route.tier, thumbnail.split("/").at(-1)!)}`
+    ? `${new URL(request.url).origin}/${tier}/${thumbnail.split("/").at(-1)!}`
     : "";
   let response: Response;
   if (contentType === MARKDOWN_TYPE) {
@@ -153,7 +158,7 @@ async function handleGet(
       object.customMetadata ?? {},
       thumbnailUrl,
       createdDate(object.uploaded),
-      expirationDate(object.uploaded, route.tier)
+      expirationDate(object.uploaded, tier)
     ));
   } else {
     response = new Response(object.body, {
@@ -312,48 +317,21 @@ async function handleDelete(request: Request, env: Env, route: ReportRoute): Pro
   }
 
   const keys = hasThumbnail(route.key) ? [route.key, thumbnailName(route.key)] : [route.key];
-  const internalKeys = keys.map((key) => storedKey(route.tier, key));
-  const legacyKeys = route.tier === DEFAULT_TIER ? keys : [];
-  await Promise.all([...internalKeys, ...legacyKeys].map((key) => env.BUCKET.delete(key)));
-  await Promise.all(keys.map((key) => {
+  const tiers: RetentionTier[] = isUnprefixed(request) ? ["archive", "30d"] : [route.tier];
+  await Promise.all(tiers.flatMap((tier) => keys.map((key) =>
+    env.BUCKET.delete(storedKey(tier, key))
+  )));
+  // Both tiers can be read through an unprefixed URL; archive also has older
+  // explicit URLs. Evict every alias, including thumbnails, whichever URL was deleted.
+  const prefixes = new Set<string>(tiers);
+  if (tiers.includes("archive") || tiers.includes("30d")) prefixes.add("");
+  await Promise.all([...prefixes].flatMap((prefix) => keys.map((key) => {
     const url = new URL(request.url);
-    url.pathname = publicPath(route.tier, key);
+    url.pathname = prefix ? `/${prefix}/${key}` : `/${key}`;
     return caches.default.delete(cacheKeyFor(url.toString()));
-  }));
+  })));
   return new Response(JSON.stringify({ key: route.key, deleted: true }) + "\n", {
     status: 200,
-    headers: { "content-type": "application/json; charset=utf-8" }
-  });
-}
-
-// Temporary authenticated migration for objects published before retention
-// prefixes existed. It deliberately returns counts rather than object names so
-// it cannot become a report listing endpoint. Remove after migration succeeds.
-async function handleMigration(request: Request, env: Env): Promise<Response> {
-  if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
-    return text("unauthorized", 401);
-  }
-
-  const cursor = new URL(request.url).searchParams.get("cursor") ?? undefined;
-  const page = await env.BUCKET.list({ delimiter: "/", cursor, limit: 100 });
-  let migrated = 0;
-  for (const listed of page.objects) {
-    if (!isValidKey(listed.key)) continue;
-    const object = await env.BUCKET.get(listed.key);
-    if (!object) continue;
-    await env.BUCKET.put(storedKey(DEFAULT_TIER, listed.key), object.body, {
-      httpMetadata: object.httpMetadata,
-      customMetadata: object.customMetadata
-    });
-    await env.BUCKET.delete(listed.key);
-    migrated += 1;
-  }
-
-  return new Response(JSON.stringify({
-    migrated,
-    done: !page.truncated,
-    ...(page.truncated ? { cursor: page.cursor } : {})
-  }) + "\n", {
     headers: { "content-type": "application/json; charset=utf-8" }
   });
 }
@@ -367,12 +345,6 @@ export default {
     // The runtime strips the body from a HEAD response, so HEAD can share the
     // GET path and still report accurate status and headers.
     const isRead = request.method === "GET" || request.method === "HEAD";
-
-    if (url.pathname === "/_migrate-retention-prefixes") {
-      return request.method === "POST"
-        ? handleMigration(request, env)
-        : text("method not allowed", 405);
-    }
 
     if (key === "") {
       return isRead ? html(renderLandingPage(url.origin)) : text("method not allowed", 405);
@@ -392,7 +364,6 @@ export default {
     }
     if (request.method === "POST") {
       const tiers = Object.keys(RETENTION_TIERS)
-        .filter((tier) => tier !== DEFAULT_TIER)
         .map((tier) => `/${tier}/<name>`)
         .join(", ");
       return route
