@@ -33,7 +33,9 @@ and a random name:
 <retention>/<32 hex characters>.<ext>
 ```
 
-The default public URL omits its internal `30d/` prefix.
+The default public URL omits its internal `archive/` prefix. Unprefixed reads
+check `archive/` first, then `30d/` for existing links. Explicit tier URLs read
+only that tier. Existing reports keep their original retention.
 
 ## Endpoints
 
@@ -75,22 +77,24 @@ state, pie, xychart, git graph, timeline, quadrant, and mindmap:
 
 ## Retention
 
-Reports expire 30 days after publish by default. A path prefix selects another
-retention tier:
+Reports have no automatic expiration by default (archive). A path prefix selects
+an expiration when publishing:
 
 ```text
 /1d/<name>        1 day
 /7d/<name>        7 days
-/<name>           30 days (default)
+/30d/<name>       30 days
 /90d/<name>       90 days
 /1y/<name>        1 year
+/<name>           no automatic expiration (default)
 /archive/<name>   no automatic expiration
 ```
 
 R2 lifecycle rules apply to matching internal object prefixes and perform the
 deletion automatically. Lifecycle deletion is asynchronous and may take about
 24 hours after the displayed expiration date. Archive reports remain removable
-through the authenticated DELETE endpoint.
+through the owner-authenticated DELETE endpoint (reports without owner metadata
+cannot be deleted).
 
 The lifecycle configuration also aborts incomplete multipart uploads after
 seven days. The Worker never starts multipart uploads, so that rule is
@@ -132,25 +136,6 @@ Deploy:
 ```bash
 pnpm deploy
 ```
-
-### One-time retention migration
-
-The retention-tier rollout moves reports published before tier prefixes were
-introduced from the bucket root into `30d/`. Deploy the tier-aware Worker, run
-the authenticated migration, then install the prefix lifecycle configuration:
-
-```bash
-pnpm deploy
-pnpm migrate
-pnpm provision
-```
-
-`pnpm migrate` uses `ARTIFACTS_URL` and `ARTIFACTS_API_KEY`, processes root
-objects in bounded pages, and reports counts without exposing object names.
-Existing public report URLs do not change. Copying resets the R2 upload date,
-so migrated reports receive 30 days from migration. Once migration is verified,
-remove the temporary migration route and legacy root-key fallback from
-`src/index.ts`, along with this script.
 
 ## Publish a Report
 
@@ -199,6 +184,24 @@ curl -X DELETE "$ARTIFACTS_URL/9f2c41d7ab3e5806d1f4c92b7e0a5643.md" \
 
 This removes the object and its cached copy. Deleting straight from R2 would
 leave the edge serving the report for up to a day.
+
+DELETE authenticates the complete bearer token against `PUBLISH_KEYS`, then
+compares its client ID with the artifact's stored `publisherClientId`. Client IDs
+are case-sensitive and cannot contain `--`; the first `--` separates the client
+ID from the API key. Both parts must be nonempty and contain no whitespace.
+New publications and their thumbnails receive this owner metadata from the
+authenticated token, never from caller-supplied report headers.
+
+A rotated key with the same client ID can delete that client's artifacts.
+Missing or invalid credentials return `401`; a different owner or missing owner
+metadata returns `403`. Older ownerless artifacts cannot be deleted through the
+Worker; their lifecycle expiration still applies. There is no admin override.
+If no target object exists, DELETE returns `404`.
+
+Unprefixed DELETE checks both `archive/` and `30d/`, including thumbnails, before
+removing anything. Every existing target must belong to the authenticated client.
+Explicit tier URLs check only that tier. Direct thumbnail deletion uses the same
+ownership check.
 
 ## Provenance
 

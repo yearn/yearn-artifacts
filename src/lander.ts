@@ -73,7 +73,7 @@ automatically generated social preview; everything else is served as-is.</p>
 ${step("Publish", "a publisher POSTs a file with a bearer key")}
 ${step("Store", "the report is saved under a random 32-character name")}
 ${step("Render", "Markdown is rendered to HTML and cached on read")}
-${step("Expire", "reports are deleted automatically after 30 days")}
+${step("Retain", "reports stay available until you delete them, unless you choose an expiration")}
 </ul>
 
 <h2>Endpoints</h2>
@@ -82,15 +82,17 @@ POST   /&lt;anything&gt;.&lt;ext&gt;   publish a report (requires a key)
 DELETE /&lt;name&gt;             unpublish a report (requires a key)</pre>
 
 <h2>Retention</h2>
-<p>Reports expire after 30 days by default. Put a retention tier before the
-name to choose a different lifetime:</p>
+<p>Reports have no automatic expiration by default. Put a retention tier before the
+name when publishing to choose an expiration:</p>
 <pre class="tiers">/1d/&lt;name&gt;        1 day
 /7d/&lt;name&gt;        7 days
-/&lt;name&gt;           30 days (default)
+/30d/&lt;name&gt;       30 days
 /90d/&lt;name&gt;       90 days
 /1y/&lt;name&gt;        1 year
+/&lt;name&gt;           no automatic expiration (default)
 /archive/&lt;name&gt;   no automatic expiration</pre>
-<p>Archive reports remain removable through the authenticated DELETE endpoint.</p>
+<p>Archive reports remain removable through the authenticated DELETE endpoint by their publishing client.
+Reports published before ownership tracking cannot be deleted; their expiration still applies.</p>
 
 <h2>Publish</h2>
 <p>Post to any single-segment name, optionally preceded by one of the retention

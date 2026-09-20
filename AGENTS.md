@@ -9,7 +9,12 @@ domains, or R2 dev URLs.
 
 Publishers authenticate with a bearer key from the `PUBLISH_KEYS` secret,
 parsed as a comma-separated list. Compare keys in constant time and without
-short-circuiting on the first match.
+short-circuiting on the first match. Tokens are `<clientId>--<apiKey>`; authenticate
+the entire token before extracting the case-sensitive client ID. Publish stamps
+`publisherClientId` on reports and thumbnails from that identity, never from
+request metadata. DELETE must check every existing target's owner before any
+mutation. Missing or different owners are forbidden; there is no admin override.
+A new key for the same client ID retains ownership rights.
 
 Reads are currently unauthenticated. Do not add an index, listing, or search
 endpoint while that is true — the absence of an index is the only thing keeping
@@ -29,7 +34,7 @@ Reports use prefix-scoped R2 lifecycle rules: `1d/`, `7d/`, `30d/`, `90d/`,
 and `1y/` expire after their named period; `archive/` has no automatic
 expiration. Reads are unauthenticated, so every retained report is standing
 exposure. Archive means only that lifecycle deletion is disabled: authenticated
-DELETE must continue to remove archived reports.
+DELETE must continue to remove archived reports owned by the authenticated client.
 
 Report content comes from repositories we do not control. Render it with raw
 HTML disabled and escape any value interpolated into a page.
@@ -40,7 +45,10 @@ The stored R2 object key format is:
 <retention>/<32 hex characters>.<ext>
 ```
 
-The default public URL omits `30d/`, but its stored R2 key includes it.
+New reports default to `archive/`; their public URLs omit that prefix.
+Unprefixed reads fall back to `30d/` only. Explicit tier URLs never fall back.
+Unprefixed DELETE removes both tiers and their thumbnails; DELETE must evict
+all affected URL aliases. Bucket-root objects are no longer supported.
 
 Markdown reports and HTML documents also have a
 `<retention>/<same 32 hex characters>.png` thumbnail. Its name is stored in the

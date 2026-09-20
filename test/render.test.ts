@@ -179,7 +179,7 @@ describe("landing page", () => {
   it("documents retention tiers and archive deletion", () => {
     const page = renderLandingPage("https://x.test");
     assert.match(page, /\/7d\/&lt;name&gt;/);
-    assert.match(page, /30 days \(default\)/);
+    assert.match(page, /no automatic expiration \(default\)/);
     assert.match(page, /\/archive\/&lt;name&gt;/);
     assert.match(page, /Archive reports remain removable/);
   });
