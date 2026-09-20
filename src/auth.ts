@@ -36,3 +36,13 @@ export function isAuthorized(header: string | null, keys: string[]): boolean {
   }
   return authorized;
 }
+
+// Authenticate the complete token before treating its prefix as an identity.
+// Client IDs are case-sensitive and end at the first "--" separator.
+export function authenticatedClientId(header: string | null, keys: string[]): string | null {
+  if (!isAuthorized(header, keys)) return null;
+  const token = bearerToken(header)!;
+  const separator = token.indexOf("--");
+  if (separator <= 0 || separator + 2 === token.length || /\s/.test(token)) return null;
+  return token.slice(0, separator);
+}

@@ -91,7 +91,8 @@ name when publishing to choose an expiration:</p>
 /1y/&lt;name&gt;        1 year
 /&lt;name&gt;           no automatic expiration (default)
 /archive/&lt;name&gt;   no automatic expiration</pre>
-<p>Archive reports remain removable through the authenticated DELETE endpoint.</p>
+<p>Archive reports remain removable through the authenticated DELETE endpoint by their publishing client.
+Reports published before ownership tracking cannot be deleted; their expiration still applies.</p>
 
 <h2>Publish</h2>
 <p>Post to any single-segment name, optionally preceded by one of the retention

@@ -1,4 +1,4 @@
-import { isAuthorized, parseKeys } from "./auth";
+import { authenticatedClientId, parseKeys } from "./auth";
 import { renderLandingPage } from "./lander";
 import { hasMermaid, MERMAID_URL, renderMarkdown, socialMeta } from "./render";
 
@@ -234,7 +234,8 @@ export function screenshotRejectPattern(origin: string, withDiagrams: boolean): 
 }
 
 async function handlePublish(request: Request, env: Env, route: ReportRoute): Promise<Response> {
-  if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
+  const clientId = authenticatedClientId(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS));
+  if (!clientId) {
     return text("unauthorized", 401);
   }
   if (!request.body) return text("empty body", 400);
@@ -243,7 +244,7 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
   const stored = randomName(extension);
   const internal = storedKey(route.tier, stored);
   const url = new URL(request.url);
-  const metadata = metadataFromHeaders(request.headers, route.key);
+  const metadata = { ...metadataFromHeaders(request.headers, route.key), publisherClientId: clientId };
 
   if (hasThumbnail(stored)) {
     const source = await request.text();
@@ -290,7 +291,8 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
         customMetadata: { ...metadata, thumbnail }
       }),
       env.BUCKET.put(internalThumbnail, image, {
-        httpMetadata: { contentType: "image/png", cacheControl: CACHE_CONTROL }
+        httpMetadata: { contentType: "image/png", cacheControl: CACHE_CONTROL },
+        customMetadata: { publisherClientId: clientId }
       })
     ]);
   } else {
@@ -312,15 +314,22 @@ async function handlePublish(request: Request, env: Env, route: ReportRoute): Pr
 // Deleting the object alone would leave the edge serving the report for up to a
 // day, so an unpublish has to drop the cached copy too.
 async function handleDelete(request: Request, env: Env, route: ReportRoute): Promise<Response> {
-  if (!isAuthorized(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS))) {
+  const clientId = authenticatedClientId(request.headers.get("authorization"), parseKeys(env.PUBLISH_KEYS));
+  if (!clientId) {
     return text("unauthorized", 401);
   }
 
   const keys = hasThumbnail(route.key) ? [route.key, thumbnailName(route.key)] : [route.key];
   const tiers: RetentionTier[] = isUnprefixed(request) ? ["archive", "30d"] : [route.tier];
-  await Promise.all(tiers.flatMap((tier) => keys.map((key) =>
-    env.BUCKET.delete(storedKey(tier, key))
-  )));
+  const internalKeys = tiers.flatMap((tier) => keys.map((key) => storedKey(tier, key)));
+  const objects = await Promise.all(internalKeys.map((key) => env.BUCKET.head(key)));
+  // Authorize every existing object before mutating anything. This also guards
+  // direct thumbnail deletes and prevents a fallback from bypassing ownership.
+  if (objects.some((object) => object && object.customMetadata?.publisherClientId !== clientId)) {
+    return text("forbidden", 403);
+  }
+  if (!objects.some(Boolean)) return text("not found", 404);
+  await Promise.all(internalKeys.map((key) => env.BUCKET.delete(key)));
   // Both tiers can be read through an unprefixed URL; archive also has older
   // explicit URLs. Evict every alias, including thumbnails, whichever URL was deleted.
   const prefixes = new Set<string>(tiers);

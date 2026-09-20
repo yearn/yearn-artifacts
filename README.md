@@ -93,7 +93,8 @@ an expiration when publishing:
 R2 lifecycle rules apply to matching internal object prefixes and perform the
 deletion automatically. Lifecycle deletion is asynchronous and may take about
 24 hours after the displayed expiration date. Archive reports remain removable
-through the authenticated DELETE endpoint.
+through the owner-authenticated DELETE endpoint (reports without owner metadata
+cannot be deleted).
 
 The lifecycle configuration also aborts incomplete multipart uploads after
 seven days. The Worker never starts multipart uploads, so that rule is
@@ -183,6 +184,24 @@ curl -X DELETE "$ARTIFACTS_URL/9f2c41d7ab3e5806d1f4c92b7e0a5643.md" \
 
 This removes the object and its cached copy. Deleting straight from R2 would
 leave the edge serving the report for up to a day.
+
+DELETE authenticates the complete bearer token against `PUBLISH_KEYS`, then
+compares its client ID with the artifact's stored `publisherClientId`. Client IDs
+are case-sensitive and cannot contain `--`; the first `--` separates the client
+ID from the API key. Both parts must be nonempty and contain no whitespace.
+New publications and their thumbnails receive this owner metadata from the
+authenticated token, never from caller-supplied report headers.
+
+A rotated key with the same client ID can delete that client's artifacts.
+Missing or invalid credentials return `401`; a different owner or missing owner
+metadata returns `403`. Older ownerless artifacts cannot be deleted through the
+Worker; their lifecycle expiration still applies. There is no admin override.
+If no target object exists, DELETE returns `404`.
+
+Unprefixed DELETE checks both `archive/` and `30d/`, including thumbnails, before
+removing anything. Every existing target must belong to the authenticated client.
+Explicit tier URLs check only that tier. Direct thumbnail deletion uses the same
+ownership check.
 
 ## Provenance
 

@@ -86,6 +86,9 @@ function bucket(
         }
       };
     },
+    async head(key: string) {
+      return key in objects ? { customMetadata: metadata[key] } : null;
+    },
     async put(key: string, body: unknown, options: unknown) {
       const text = body instanceof ReadableStream
         ? await new Response(body).text()
@@ -189,7 +192,7 @@ describe("cache key", () => {
 });
 
 describe("DELETE /<key>", () => {
-  const env = () => ({ BUCKET: bucket({ [`30d/${KEY}`]: "# Findings\n" }), PUBLISH_KEYS: "key-one" });
+  const env = () => ({ BUCKET: bucket({ [`30d/${KEY}`]: "# Findings\n" }, { [`30d/${KEY}`]: { publisherClientId: "alice" } }), PUBLISH_KEYS: "alice--key-one" });
 
   it("removes the object and its cached copy", async () => {
     const target = env();
@@ -200,7 +203,7 @@ describe("DELETE /<key>", () => {
     const response = await worker.fetch(
       new Request(`https://x.test/${KEY}`, {
         method: "DELETE",
-        headers: { authorization: "Bearer key-one" }
+        headers: { authorization: "Bearer alice--key-one" }
       }),
       target,
       ctx
@@ -219,11 +222,11 @@ describe("DELETE /<key>", () => {
 
   it("removes an HTML document together with its thumbnail", async () => {
     const key = "0123456789abcdef0123456789abcdef.html";
-    const target = { BUCKET: bucket({ [`30d/${key}`]: "<html></html>" }), PUBLISH_KEYS: "key-one" };
+    const target = { BUCKET: bucket({ [`30d/${key}`]: "<html></html>" }, { [`30d/${key}`]: { publisherClientId: "alice" } }), PUBLISH_KEYS: "alice--key-one" };
     const response = await worker.fetch(
       new Request(`https://x.test/${key}`, {
         method: "DELETE",
-        headers: { authorization: "Bearer key-one" }
+        headers: { authorization: "Bearer alice--key-one" }
       }),
       target,
       ctx
@@ -241,8 +244,8 @@ describe("DELETE /<key>", () => {
   // archive report ever gets removed.
   it("removes an archive report and its cached copy", async () => {
     const target = {
-      BUCKET: bucket({ [`archive/${KEY}`]: "# Findings\n" }),
-      PUBLISH_KEYS: "key-one"
+      BUCKET: bucket({ [`archive/${KEY}`]: "# Findings\n" }, { [`archive/${KEY}`]: { publisherClientId: "alice" } }),
+      PUBLISH_KEYS: "alice--key-one"
     };
 
     const first = await worker.fetch(new Request(`https://x.test/archive/${KEY}`), target, ctx);
@@ -251,7 +254,7 @@ describe("DELETE /<key>", () => {
     const response = await worker.fetch(
       new Request(`https://x.test/archive/${KEY}`, {
         method: "DELETE",
-        headers: { authorization: "Bearer key-one" }
+        headers: { authorization: "Bearer alice--key-one" }
       }),
       target,
       ctx
@@ -512,7 +515,7 @@ describe("POST /<key>", () => {
   const env = () => ({
     BUCKET: bucket(),
     BROWSER: browser(),
-    PUBLISH_KEYS: "key-one,key-two"
+    PUBLISH_KEYS: "alice--key-one,bob--key-two"
   });
 
   it("stores the body under a random name and returns its URL", async () => {
@@ -520,7 +523,7 @@ describe("POST /<key>", () => {
     const response = await worker.fetch(
       new Request(`https://x.test/${POST_NAME}`, {
         method: "POST",
-        headers: { authorization: "Bearer key-one" },
+        headers: { authorization: "Bearer alice--key-one" },
         body: "# Findings\n"
       }),
       target,
@@ -559,7 +562,7 @@ describe("POST /<key>", () => {
       new Request(`https://x.test/${POST_NAME}`, {
         method: "POST",
         headers: {
-          authorization: "Bearer key-one",
+          authorization: "Bearer alice--key-one",
           "x-report-repository": "yearn/section9",
           "x-report-commit": "a1b2c3d",
           "x-report-confidential": "true"
@@ -574,6 +577,7 @@ describe("POST /<key>", () => {
       customMetadata: Record<string, string>
     };
     assert.deepEqual(options.customMetadata, {
+      publisherClientId: "alice",
       repository: "yearn/section9",
       commit: "a1b2c3d",
       name: POST_NAME,
@@ -592,7 +596,7 @@ describe("POST /<key>", () => {
       const response = await worker.fetch(
         new Request(`https://x.test/${POST_NAME}`, {
           method: "POST",
-          headers: { authorization: "Bearer key-one" },
+          headers: { authorization: "Bearer alice--key-one" },
           body: "x"
         }),
         target,
@@ -621,7 +625,7 @@ describe("POST /<key>", () => {
     const response = await worker.fetch(
       new Request(`https://x.test/${POST_NAME}`, {
         method: "POST",
-        headers: { authorization: "Bearer key-one" },
+        headers: { authorization: "Bearer alice--key-one" },
         body: "x"
       }),
       { BUCKET: bucket() },
@@ -634,12 +638,12 @@ describe("POST /<key>", () => {
     const target = {
       BUCKET: bucket(),
       BROWSER: browser(new Response("unavailable", { status: 503 })),
-      PUBLISH_KEYS: "key-one"
+      PUBLISH_KEYS: "alice--key-one"
     };
     const response = await worker.fetch(
       new Request(`https://x.test/${POST_NAME}`, {
         method: "POST",
-        headers: { authorization: "Bearer key-one" },
+        headers: { authorization: "Bearer alice--key-one" },
         body: "# Findings\n"
       }),
       target,
@@ -655,7 +659,7 @@ describe("POST /<key>", () => {
     const response = await worker.fetch(
       new Request("https://x.test/dashboard.html", {
         method: "POST",
-        headers: { authorization: "Bearer key-one" },
+        headers: { authorization: "Bearer alice--key-one" },
         body: source
       }),
       target,
@@ -689,7 +693,7 @@ describe("POST /<key>", () => {
     const response = await worker.fetch(
       new Request("https://x.test/report.json", {
         method: "POST",
-        headers: { authorization: "Bearer key-one" },
+        headers: { authorization: "Bearer alice--key-one" },
         body: '{"ok":true}'
       }),
       target,
@@ -704,7 +708,7 @@ describe("POST /<key>", () => {
     const published = await worker.fetch(
       new Request("https://x.test/7d/REPORT.md", {
         method: "POST",
-        headers: { authorization: "Bearer key-one" },
+        headers: { authorization: "Bearer alice--key-one" },
         body: "# Findings\n"
       }),
       target,
@@ -717,7 +721,9 @@ describe("POST /<key>", () => {
     const objects = Object.fromEntries(
       Object.entries(target.BUCKET.puts).map(([key, value]) => [key, value.body])
     );
-    const readable = { ...target, BUCKET: bucket(objects) };
+    const readable = { ...target, BUCKET: bucket(objects, Object.fromEntries(
+      Object.entries(target.BUCKET.puts).map(([key, value]) => [key, (value.options as { customMetadata: Record<string, string> }).customMetadata])
+    )) };
     cacheStore.clear();
     const read = await worker.fetch(new Request(body.url), readable, ctx);
     assert.match(await read.text(), /Expires: 2026-08-16/);
@@ -725,7 +731,7 @@ describe("POST /<key>", () => {
     const removed = await worker.fetch(
       new Request(body.url, {
         method: "DELETE",
-        headers: { authorization: "Bearer key-one" }
+        headers: { authorization: "Bearer alice--key-one" }
       }),
       readable,
       ctx
@@ -758,7 +764,7 @@ describe("POST /<key>", () => {
       const response = await worker.fetch(
         new Request(`https://x.test/${path}`, {
           method: "POST",
-          headers: { authorization: "Bearer key-one" },
+          headers: { authorization: "Bearer alice--key-one" },
           body: "x"
         }),
         target,
@@ -807,15 +813,18 @@ describe("archive default and 30d compatibility", () => {
     for (const deletePrefix of ["", `${tier}/`]) {
       it(`deleting ${deletePrefix || "unprefixed "}evicts ${tier} report and thumbnail aliases`, async () => {
         const target = {
-          BUCKET: bucket({ [`${tier}/${KEY}`]: "# Report", [`${tier}/${thumbnail}`]: "image" }),
-          PUBLISH_KEYS: "key-one"
+          BUCKET: bucket({ [`${tier}/${KEY}`]: "# Report", [`${tier}/${thumbnail}`]: "image" }, {
+            [`${tier}/${KEY}`]: { publisherClientId: "alice" },
+            [`${tier}/${thumbnail}`]: { publisherClientId: "alice" }
+          }),
+          PUBLISH_KEYS: "alice--key-one"
         };
         const paths = [KEY, thumbnail, `${tier}/${KEY}`, `${tier}/${thumbnail}`];
         for (const path of paths) {
           assert.equal((await worker.fetch(new Request(`https://x.test/${path}`), target, ctx)).status, 200);
         }
         const removed = await worker.fetch(new Request(`https://x.test/${deletePrefix}${KEY}`, {
-          method: "DELETE", headers: { authorization: "Bearer key-one" }
+          method: "DELETE", headers: { authorization: "Bearer alice--key-one" }
         }), target, ctx);
         assert.equal(removed.status, 200);
         for (const path of paths) {
@@ -827,14 +836,17 @@ describe("archive default and 30d compatibility", () => {
 
   it("unprefixed deletion removes both tiers so a fallback cannot reappear", async () => {
     const target = {
-      BUCKET: bucket({ [`archive/${KEY}`]: "# Archive", [`30d/${KEY}`]: "# Older" }),
-      PUBLISH_KEYS: "key-one"
+      BUCKET: bucket({ [`archive/${KEY}`]: "# Archive", [`30d/${KEY}`]: "# Older" }, {
+        [`archive/${KEY}`]: { publisherClientId: "alice" },
+        [`30d/${KEY}`]: { publisherClientId: "alice" }
+      }),
+      PUBLISH_KEYS: "alice--key-one"
     };
     for (const path of [KEY, `archive/${KEY}`, `30d/${KEY}`]) {
       await worker.fetch(new Request(`https://x.test/${path}`), target, ctx);
     }
     await worker.fetch(new Request(`https://x.test/${KEY}`, {
-      method: "DELETE", headers: { authorization: "Bearer key-one" }
+      method: "DELETE", headers: { authorization: "Bearer alice--key-one" }
     }), target, ctx);
     for (const path of [KEY, `archive/${KEY}`, `30d/${KEY}`]) {
       assert.equal((await worker.fetch(new Request(`https://x.test/${path}`), target, ctx)).status, 404);
@@ -843,9 +855,9 @@ describe("archive default and 30d compatibility", () => {
 
   for (const tier of ["archive", "30d"]) {
     it(`publishes explicitly to ${tier}`, async () => {
-      const target = { BUCKET: bucket(), PUBLISH_KEYS: "key-one" };
+      const target = { BUCKET: bucket(), PUBLISH_KEYS: "alice--key-one" };
       const response = await worker.fetch(new Request(`https://x.test/${tier}/report.txt`, {
-        method: "POST", headers: { authorization: "Bearer key-one" }, body: "report"
+        method: "POST", headers: { authorization: "Bearer alice--key-one" }, body: "report"
       }), target, ctx);
       assert.equal(response.status, 201);
       const { key, url } = await response.json() as { key: string; url: string };
@@ -853,4 +865,97 @@ describe("archive default and 30d compatibility", () => {
       assert.equal(url, `https://x.test/${tier === "archive" ? "" : "30d/"}${key}`);
     });
   }
+});
+
+describe("artifact ownership", () => {
+  const thumbnail = KEY.replace(/\.md$/, ".png");
+  const auth = { authorization: "Bearer alice--new-key" };
+  const configured = "alice--new-key,bob--key";
+
+  for (const extension of ["md", "html", "json", "png"]) {
+    it(`stamps trusted ownership on published ${extension} artifacts and thumbnails`, async () => {
+      const target = { BUCKET: bucket(), BROWSER: browser(), PUBLISH_KEYS: configured };
+      const published = await worker.fetch(new Request(`https://x.test/report.${extension}`, {
+        method: "POST",
+        headers: { ...auth, "x-report-publisherClientId": "bob", "x-report-owner": "bob" },
+        body: "content"
+      }), target, ctx);
+      assert.equal(published.status, 201);
+      for (const value of Object.values(target.BUCKET.puts)) {
+        const metadata = (value.options as { customMetadata: Record<string, string> }).customMetadata;
+        assert.equal(metadata.publisherClientId, "alice");
+        assert.equal(metadata.owner, undefined);
+      }
+    });
+  }
+
+  for (const owner of [undefined, "bob", "Alice"]) {
+    for (const key of [KEY, thumbnail]) {
+      it(`denies deleting ${key} owned by ${owner ?? "nobody"} without evicting its cache`, async () => {
+        const target = {
+          BUCKET: bucket({ [`archive/${key}`]: "content" }, {
+            [`archive/${key}`]: owner ? { publisherClientId: owner } : {}
+          }),
+          PUBLISH_KEYS: configured
+        };
+        const url = `https://x.test/${key}`;
+        await worker.fetch(new Request(url), target, ctx);
+        const response = await worker.fetch(new Request(url, { method: "DELETE", headers: auth }), target, ctx);
+        assert.equal(response.status, 403);
+        assert.deepEqual(target.BUCKET.deletes, []);
+        assert.ok(cacheStore.has(cacheKeyFor(url).url));
+      });
+    }
+  }
+
+  it("allows a rotated key for the same client to delete a thumbnail directly", async () => {
+    const target = {
+      BUCKET: bucket({ [`archive/${thumbnail}`]: "image" }, {
+        [`archive/${thumbnail}`]: { publisherClientId: "alice" }
+      }),
+      PUBLISH_KEYS: configured
+    };
+    const response = await worker.fetch(new Request(`https://x.test/${thumbnail}`, {
+      method: "DELETE", headers: auth
+    }), target, ctx);
+    assert.equal(response.status, 200);
+    assert.equal(await target.BUCKET.get(`archive/${thumbnail}`), null);
+  });
+
+  for (const blockedKey of [`30d/${KEY}`, `archive/${thumbnail}`]) {
+    it(`checks ${blockedKey} before deleting any owned objects`, async () => {
+      const keys = [`archive/${KEY}`, `archive/${thumbnail}`, `30d/${KEY}`];
+      const target = {
+        BUCKET: bucket(Object.fromEntries(keys.map((key) => [key, "content"])),
+          Object.fromEntries(keys.map((key) => [key, { publisherClientId: key === blockedKey ? "bob" : "alice" }]))),
+        PUBLISH_KEYS: configured
+      };
+      const response = await worker.fetch(new Request(`https://x.test/${KEY}`, {
+        method: "DELETE", headers: auth
+      }), target, ctx);
+      assert.equal(response.status, 403);
+      assert.deepEqual(target.BUCKET.deletes, []);
+    });
+  }
+
+  it("does not authorize a forged key just because its client ID matches", async () => {
+    const target = {
+      BUCKET: bucket({ [`archive/${KEY}`]: "content" }, { [`archive/${KEY}`]: { publisherClientId: "alice" } }),
+      PUBLISH_KEYS: configured
+    };
+    const response = await worker.fetch(new Request(`https://x.test/${KEY}`, {
+      method: "DELETE", headers: { authorization: "Bearer alice--forged" }
+    }), target, ctx);
+    assert.equal(response.status, 401);
+    assert.deepEqual(target.BUCKET.deletes, []);
+  });
+
+  it("returns 404 when no object exists to authorize", async () => {
+    const target = { BUCKET: bucket(), PUBLISH_KEYS: configured };
+    const response = await worker.fetch(new Request(`https://x.test/${KEY}`, {
+      method: "DELETE", headers: auth
+    }), target, ctx);
+    assert.equal(response.status, 404);
+    assert.deepEqual(target.BUCKET.deletes, []);
+  });
 });

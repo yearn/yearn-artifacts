@@ -52,3 +52,22 @@ describe("authorization", () => {
     assert.equal(isAuthorized("Bearer ", []), false);
   });
 });
+
+describe("authenticated client identity", () => {
+  it("requires the full configured token and preserves client ID case", async () => {
+    const { authenticatedClientId } = await import("../src/auth.ts");
+    const keys = ["Alice--old-key", "Alice--new-key", "bob--key"];
+    assert.equal(authenticatedClientId("Bearer Alice--old-key", keys), "Alice");
+    assert.equal(authenticatedClientId("Bearer Alice--new-key", keys), "Alice");
+    assert.equal(authenticatedClientId("Bearer Alice--forged", keys), null);
+    assert.equal(authenticatedClientId("Bearer alice--old-key", keys), null);
+    assert.equal(authenticatedClientId("Bearer bob--key", keys), "bob");
+  });
+
+  it("rejects malformed identities even when the complete token is configured", async () => {
+    const { authenticatedClientId } = await import("../src/auth.ts");
+    for (const token of ["key-without-client", "--secret", "alice--", "alice name--secret"]) {
+      assert.equal(authenticatedClientId(`Bearer ${token}`, [token]), null);
+    }
+  });
+});
