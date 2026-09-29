@@ -1,3 +1,8 @@
 node_modules/
 .wrangler/
 .dev.vars
+
+# lock files (using bun)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

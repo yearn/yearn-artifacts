@@ -1,0 +1,18 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+cache-mode: none
+
+jobs:
+  deploy:
+    uses: yearn/yearn-gha/.github/workflows/cloudflare-deploy.yml@17446bfb9e9c7911367379222fa5b7e3fff52fa3
+    with:
+      project: yearn-artifacts
+      identity-id: ${{ vars.DOPPLER_PRODUCTION_IDENTITY_ID }}
