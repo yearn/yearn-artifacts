@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "description": "Cloudflare Worker that publishes and renders private security scan reports from R2.",
-  "packageManager": "pnpm@11.3.0",
   "scripts": {
     "provision": "bash scripts/provision-r2.sh",
     "dev": "wrangler dev",

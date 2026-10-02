@@ -102,24 +102,25 @@ defensive hygiene for the bucket, not part of report retention.
 
 ## Setup
 
-Install dependencies:
+Install dependencies (this repository uses **bun**):
 
 ```bash
-corepack enable
-pnpm install
+bun install
 ```
 
 Create the private R2 bucket:
 
 ```bash
-pnpm provision
+bun run provision
 ```
 
-Set one or more publish keys, comma-separated:
+### Publish keys
 
-```bash
-pnpm exec wrangler secret put PUBLISH_KEYS
-```
+`PUBLISH_KEYS` is a comma-separated list held in Doppler project
+`yearn-artifacts`, config `prd`, with visibility **Masked**. Every deploy pushes
+every value in that config to the worker with `wrangler secret bulk` before
+`wrangler deploy`, so Doppler is the single source of truth — edit the list
+there and let a deploy carry it.
 
 Each key is `[client]--[64 hex characters]`, one per publisher so each can be
 revoked on its own. Generate one with:
@@ -128,14 +129,27 @@ revoked on its own. Generate one with:
 echo "[client]--$(openssl rand -hex 32)"
 ```
 
-`secret put` replaces the whole list and the current value cannot be read back,
-so when adding a key, enter every existing key along with the new one.
+Unlike `wrangler secret put`, the Doppler value *can* be read back, so adding a
+publisher no longer means re-entering every existing key. Revoking a publisher
+means dropping its key from the Doppler value and deploying.
 
-Deploy:
+Two caveats from the shared workflow:
 
-```bash
-pnpm deploy
-```
+- The sync is additive. A key removed from Doppler stays on the worker until
+  someone runs `wrangler secret delete`.
+- A `wrangler secret put` made by hand is reverted on the next deploy.
+
+### Deploy
+
+A push to `main` deploys through the shared `yearn/yearn-gha` Cloudflare
+workflow, which authenticates to Doppler with OIDC. It is the only deploy path
+— there is no `workflow_dispatch` and no Cloudflare token in GitHub. The shared
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` come from Doppler
+`webops-shared-prod` / `cloudflare-deploy-configs`.
+
+Repository variable `DOPPLER_PRODUCTION_IDENTITY_ID` holds the production
+Doppler identity; identity IDs are not secrets. See
+`yearn-gha/specs/doppler-cloudflare.md` for the identity's required claims.
 
 ## Publish a Report
 
